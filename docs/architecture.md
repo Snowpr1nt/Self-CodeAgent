@@ -1,0 +1,60 @@
+# MewCode Python 架构概览
+
+## 1. 项目定位
+
+MewCode 是一个运行在终端中的 AI Coding Agent。它不只是封装一次模型调用，而是维护持续对话，驱动模型选择工具，执行工具后把结果送回模型，直到任务完成或触发安全边界。
+
+## 2. 核心数据流
+
+```mermaid
+flowchart LR
+    User[用户] --> Entry[CLI / Textual TUI / WebSocket]
+    Entry --> Agent[Agent ReAct Loop]
+    Agent <--> Client[LLM Client]
+    Client <--> Provider[Anthropic / OpenAI / Compatible API]
+    Agent --> Guard[Permission / Hook / Sandbox]
+    Guard --> Registry[Tool Registry]
+    Registry --> CoreTools[Core Tools]
+    Registry --> Extensions[MCP / Skills / Commands]
+    Registry --> Parallel[SubAgent / Worktree / Teams]
+    Registry --> Agent
+    Agent <--> State[Conversation / Context / Session / Memory]
+```
+
+一次典型循环包含以下步骤：
+
+1. 入口层接收用户消息并初始化配置、模型客户端与工具注册表。
+2. Agent 构造系统提示词，将对话和工具 Schema 发给模型。
+3. 模型以流式事件返回文本、思考内容或工具调用。
+4. Agent 对工具进行权限判断、参数校验和执行。
+5. 工具结果进入 Conversation，必要时触发落盘、压缩或恢复。
+6. Agent 继续下一轮，直到模型结束回答或达到终止条件。
+
+## 3. 模块地图
+
+| 责任 | 主要位置 | 作用 |
+|---|---|---|
+| 进程入口 | `mewcode/__main__.py` | CLI 参数、配置加载、非交互模式、TUI 与远程模式分流 |
+| 交互界面 | `mewcode/app.py`、`mewcode/remote.py` | Textual TUI、WebSocket 服务、权限与计划确认 UI |
+| Agent 核心 | `mewcode/agent.py` | ReAct 循环、流式事件、工具调度、恢复与任务通知 |
+| 模型适配 | `mewcode/client.py` | Anthropic、OpenAI、OpenAI Compatible 流式协议适配 |
+| 对话与提示词 | `mewcode/conversation.py`、`mewcode/prompts.py` | 消息状态、环境注入、系统提示词构建 |
+| 工具系统 | `mewcode/tools/` | Tool 抽象、注册表、六个核心工具及高级协作工具 |
+| 权限治理 | `mewcode/permissions/`、`mewcode/sandbox/` | 模式矩阵、危险命令、路径规则、OS Sandbox、HITL |
+| 上下文治理 | `mewcode/context/` | Token 锚点、工具结果落盘、自动压缩和恢复附件 |
+| 外部工具 | `mewcode/mcp/` | MCP 连接、动态参数模型、失败隔离和延迟发现 |
+| 长期状态 | `mewcode/memory/`、`mewcode/filehistory/` | 指令、会话、记忆提取、召回、整合与文件快照 |
+| 扩展机制 | `mewcode/commands/`、`mewcode/skills/`、`mewcode/hooks/` | Slash Command、Skill、生命周期自动化 |
+| 多 Agent | `mewcode/agents/`、`mewcode/worktree/`、`mewcode/teams/` | 子 Agent、后台任务、Git 隔离、邮箱和共享任务 |
+
+## 4. 关键设计原则
+
+- **模型与执行解耦**：模型只生成结构化工具调用，实际能力由 Tool 实现。
+- **安全默认拒绝**：权限模式、危险命令、路径沙箱和人工确认共同约束副作用。
+- **长对话可恢复**：真实 Token 用量与估算尾部结合，超大工具结果落盘，压缩后保留恢复信息。
+- **扩展按需加载**：MCP 和部分高级工具延迟加入 Schema，避免无关工具挤占上下文。
+- **并行任务可追踪**：SubAgent、Worktree 和 Teams 分别解决任务拆分、文件隔离与持续协作。
+
+## 5. 当前基线偏差
+
+设计上，所有工具调用都应经过 Hook。当前主 Agent 的流式快速执行路径直接调用 `_execute_single_tool_direct()`，没有执行 `pre_tool_use` 和 `post_tool_use` Hook；Hook 逻辑只出现在非交互后台路径中。这是 Day 11 的高优先级安全修复项。
