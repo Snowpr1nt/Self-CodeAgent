@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import logging
 import os
 import sys
-import time
 from pathlib import Path
 
 from mewcode.config import ConfigError, load_config
@@ -110,24 +108,11 @@ def main() -> None:
 
 
 async def _run_prompt(config, permission_mode, hook_engine, prompt: str, output_format: str = "text") -> None:
-    from mewcode.agent import (
-        Agent,
-        CompactNotification,
-        ErrorEvent,
-        LoopComplete,
-        PermissionRequest,
-        PermissionResponse,
-        RetryEvent,
-        StreamText,
-        ThinkingText,
-        ToolResultEvent,
-        ToolUseEvent,
-        TurnComplete,
-        UsageEvent,
-    )
+    from mewcode.agent import Agent
     from mewcode.client import create_client, resolve_context_window
     from mewcode.conversation import ConversationManager
     from mewcode.memory.instructions import load_instructions
+    from mewcode.noninteractive import PromptEventWriter
     from mewcode.permissions import (
         DangerousCommandDetector,
         PathSandbox,
@@ -146,12 +131,6 @@ async def _run_prompt(config, permission_mode, hook_engine, prompt: str, output_
     from mewcode.tools.team_delete import TeamDeleteTool
     from mewcode.worktree import WorktreeManager
     from mewcode.config import WorktreeConfig
-
-    is_json = output_format == "stream-json"
-
-    def emit_json(obj: dict) -> None:
-        """输出一行 NDJSON 到 stdout"""
-        print(json.dumps(obj, ensure_ascii=False), flush=True)
 
     provider = config.providers[0]
     client = create_client(provider)
@@ -238,97 +217,11 @@ async def _run_prompt(config, permission_mode, hook_engine, prompt: str, output_
     conv = ConversationManager()
     conv.add_user_message(prompt)
 
-    start = time.monotonic()
-    text_buf = ""
-    total_input = 0
-    total_output = 0
-    tool_calls: list[dict] = []
+    output = PromptEventWriter(output_format)
 
     async for event in agent.run(conv):
-        if isinstance(event, StreamText):
-            text_buf += event.text
-            if is_json:
-                emit_json({"type": "assistant", "text": event.text})
-
-        elif isinstance(event, ThinkingText):
-            if is_json:
-                emit_json({"type": "thinking", "text": event.text})
-
-        elif isinstance(event, ToolUseEvent):
-            tool_calls.append({"name": event.tool_name, "is_error": False})
-            if is_json:
-                emit_json({
-                    "type": "tool_use",
-                    "tool_name": event.tool_name,
-                    "tool_id": event.tool_id,
-                    "args": event.arguments,
-                })
-
-        elif isinstance(event, ToolResultEvent):
-            # 回填最后一个同名 tool_call 的 is_error
-            if tool_calls:
-                tool_calls[-1]["is_error"] = event.is_error
-            if is_json:
-                emit_json({
-                    "type": "tool_result",
-                    "tool_name": event.tool_name,
-                    "tool_id": event.tool_id,
-                    "output": event.output,
-                    "is_error": event.is_error,
-                    "elapsed": round(event.elapsed, 3),
-                })
-
-        elif isinstance(event, UsageEvent):
-            total_input = event.input_tokens
-            total_output = event.output_tokens
-            if is_json:
-                emit_json({
-                    "type": "usage",
-                    "input_tokens": event.input_tokens,
-                    "output_tokens": event.output_tokens,
-                })
-
-        elif isinstance(event, TurnComplete):
-            if is_json:
-                emit_json({"type": "turn_complete", "turn": event.turn})
-
-        elif isinstance(event, LoopComplete):
-            # 最终结果：stream-json 输出 result 行，text 模式直接打印文本
-            elapsed_ms = int((time.monotonic() - start) * 1000)
-            if is_json:
-                emit_json({
-                    "type": "result",
-                    "result": text_buf,
-                    "duration_ms": elapsed_ms,
-                    "num_turns": event.total_turns,
-                    "tool_calls": tool_calls,
-                    "usage": {
-                        "input_tokens": total_input,
-                        "output_tokens": total_output,
-                    },
-                    "stop_reason": "end_turn",
-                })
-            else:
-                print(text_buf, end="", flush=True)
+        if output.handle(event):
             break
-
-        elif isinstance(event, ErrorEvent):
-            if is_json:
-                emit_json({"type": "error", "message": event.message})
-            else:
-                print(f"Error: {event.message}", file=sys.stderr, flush=True)
-
-        elif isinstance(event, CompactNotification):
-            if is_json:
-                emit_json({"type": "compact", "message": event.message})
-
-        elif isinstance(event, RetryEvent):
-            if is_json:
-                emit_json({"type": "retry", "reason": event.reason})
-
-        elif isinstance(event, PermissionRequest):
-            # -p 非交互模式：自动批准所有权限请求
-            event.future.set_result(PermissionResponse.ALLOW)
 
     # 如果有 team 在运行，轮询等待 teammate 完成
     if not team_manager._teams:
@@ -352,12 +245,8 @@ async def _run_prompt(config, permission_mode, hook_engine, prompt: str, output_
         last_result = await agent.run_to_completion(
             "Teammate notifications received. Process them and continue.", conv
         )
-        if is_json:
-            emit_json({"type": "assistant", "text": last_result})
-        else:
-            print(last_result, flush=True)
+        output.write_follow_up(last_result)
 
 
 if __name__ == "__main__":
     main()
-

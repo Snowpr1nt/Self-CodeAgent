@@ -78,3 +78,18 @@ Day 2 新增 `tests/test_client.py`，参数化后增加 14 个用例。锁定�
 - 1 warning
 
 三个失败与 Day 1 完全一致，因此 Day 2 没有引入新的回归。客户端相关定向测试 14 个全部通过；客户端及 Context Window、Serialization、Consolidation 邻接测试为 63 passed、1 skipped。
+
+## 8. Day 3 回归结果
+
+Day 3 新增 `tests/test_entrypoints.py`，增加 7 个用例。总收集数由 585 增加到 592：
+
+- 587 passed
+- 3 failed
+- 2 skipped
+- 1 warning
+
+三个失败与 Day 1、Day 2 完全一致，没有新增红色项。排除这三条已知失败后执行绿色门禁，结果为 587 passed、2 skipped、3 deselected。
+
+入口、Serialization 与 Agent 邻接测试为 32 passed、1 deselected。语法检查和 `mewcode --help` CLI Smoke 同时通过。
+
+在沙箱中运行全量测试时，pytest 的 `--basetemp` 应位于仓库外，`HOME` 与 `USERPROFILE` 也应指向可写隔离目录。否则指令文件会沿父目录搜索到仓库的 `MEWCODE.md`，用户级 Team 文件也可能因真实主目录不可写而产生环境性失败。

@@ -34,7 +34,7 @@ flowchart LR
 
 | 责任 | 主要位置 | 作用 |
 |---|---|---|
-| 进程入口 | `mewcode/__main__.py` | CLI 参数、配置加载、非交互模式、TUI 与远程模式分流 |
+| 进程入口 | `mewcode/__main__.py`、`mewcode/noninteractive.py` | CLI 参数、入口分流、非交互事件到 text/NDJSON 的转换 |
 | 交互界面 | `mewcode/app.py`、`mewcode/remote.py` | Textual TUI、WebSocket 服务、权限与计划确认 UI |
 | Agent 核心 | `mewcode/agent.py` | ReAct 循环、流式事件、工具调度、恢复与任务通知 |
 | 模型适配 | `mewcode/client.py` | Anthropic、OpenAI、OpenAI Compatible 流式协议适配 |

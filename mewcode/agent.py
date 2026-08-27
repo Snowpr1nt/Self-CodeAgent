@@ -494,6 +494,7 @@ class Agent:
                 hook_prompts=hook_prompts,
                 coordinator_mode=self.coordinator_mode,
                 agent_catalog=self._agent_catalog_list or None,
+                work_dir=self.work_dir,
             )
 
             if self.plan_mode:
@@ -1059,6 +1060,7 @@ class Agent:
         system = build_system_prompt(
             hook_prompts=hook_prompts,
             coordinator_mode=self.coordinator_mode,
+            work_dir=self.work_dir,
         )
 
         tools = self.registry.get_all_schemas(self.protocol)
