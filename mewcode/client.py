@@ -350,6 +350,7 @@ class OpenAIClient(LLMClient):
         kwargs: dict[str, Any] = {
             "model": self.model,
             "input": input_messages,
+            "max_output_tokens": self.max_output_tokens,
             "stream": True,
         }
         if system:
@@ -525,6 +526,8 @@ class OpenAICompatClient(LLMClient):
         # tool_calls 列表中的位置索引下发 delta，我们按索引跟踪每个进行中的调用。
         active_calls: dict[int, dict[str, str]] = {}  # 索引 -> {id, name, args}
         reasoning_accum = ""
+        stream_stop_reason = "end_turn"
+        stream_end_emitted = False
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
@@ -542,16 +545,24 @@ class OpenAICompatClient(LLMClient):
                         cache_read = getattr(details, "cached_tokens", 0) or 0
                         prompt_tokens = chunk.usage.prompt_tokens or 0
                         yield StreamEnd(
-                            stop_reason="end_turn",
+                            stop_reason=stream_stop_reason,
                             input_tokens=max(prompt_tokens - cache_read, 0),
                             output_tokens=chunk.usage.completion_tokens or 0,
                             cache_read=cache_read,
                             cache_creation=0,
                         )
+                        stream_end_emitted = True
                     continue
 
                 choice = chunk.choices[0]
                 delta = choice.delta
+
+                if choice.finish_reason:
+                    stream_stop_reason = {
+                        "stop": "end_turn",
+                        "tool_calls": "tool_use",
+                        "length": "max_tokens",
+                    }.get(choice.finish_reason, choice.finish_reason)
 
                 # --- 文本内容 ---
                 if delta and delta.content:
@@ -601,6 +612,9 @@ class OpenAICompatClient(LLMClient):
                                 arguments=args,
                             )
                         active_calls.clear()
+
+            if not stream_end_emitted:
+                yield StreamEnd(stop_reason=stream_stop_reason)
 
         except _openai.AuthenticationError as e:
             raise AuthenticationError(f"Invalid API key: {e}") from e

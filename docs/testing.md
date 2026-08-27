@@ -67,3 +67,14 @@
 - 安全相关提交：权限、Hook、Bash 和 Agent 测试必须同时通过。
 - Day 7 与 Day 14：运行全量测试并更新本文件结果。
 - 不允许用删除断言、跳过测试或扩大权限来制造“绿色”结果。
+
+## 7. Day 2 回归结果
+
+Day 2 新增 `tests/test_client.py`，参数化后增加 14 个用例。锁定依赖增加 `socksio`，总收集数由 571 增加到 585：
+
+- 580 passed
+- 3 failed
+- 2 skipped
+- 1 warning
+
+三个失败与 Day 1 完全一致，因此 Day 2 没有引入新的回归。客户端相关定向测试 14 个全部通过；客户端及 Context Window、Serialization、Consolidation 邻接测试为 63 passed、1 skipped。

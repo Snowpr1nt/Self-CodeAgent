@@ -5,7 +5,7 @@
 | 状态 | 天数 | 主题 | 验收产物 |
 |---|---:|---|---|
 | ✅ | 1 | Git、uv、架构与测试基线 | 原始源码标签、锁定环境、架构图、测试报告、学习日志 |
-| ⬜ | 2 | 配置与 LLM Client | Mock Provider 流式测试，可选真实 API Smoke |
+| ✅ | 2 | 配置与 LLM Client | Mock Provider 流式测试；真实 API Smoke 等待测试 Key |
 | ⬜ | 3 | Conversation、Prompt 与入口 | 非交互 text/stream-json 场景 |
 | ⬜ | 4 | Tool 抽象与六个核心工具 | 文件、Diff、Glob、Grep、Bash 定向测试 |
 | ⬜ | 5 | ReAct Agent Loop | Mock LLM 多轮工具闭环 |
