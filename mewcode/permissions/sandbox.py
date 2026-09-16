@@ -63,7 +63,7 @@ class PathSandbox:
         return False
 
 
-    def check(self, path: str) -> tuple[bool, str]:
+    def check(self, path: str, *, write: bool = False) -> tuple[bool, str]:
         p = Path(path).expanduser()
         if not p.is_absolute():
             p = self.project_root / p
@@ -84,8 +84,8 @@ class PathSandbox:
                 return False, f"无法解析路径: {path}"
             real_path = resolved_ancestor / abs_path.relative_to(ancestor)
 
-        # 禁写检查优先于允许检查
-        if self._is_deny_write(real_path):
+        # 禁写规则只约束写操作；读取仍需通过允许根目录检查
+        if write and self._is_deny_write(real_path):
             return False, f"路径 {path} 在禁写列表中"
 
         for root in self._allowed_roots:

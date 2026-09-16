@@ -4,8 +4,8 @@
 # 简历模版：jianli.xiaolinnote.com
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from mewcode.permissions.dangerous import DangerousCommandDetector, is_safe_command
@@ -15,6 +15,21 @@ from mewcode.permissions.sandbox import PathSandbox
 from mewcode.tools.base import Tool
 
 _PLAN_MODE_ALLOWED_TOOLS = frozenset({"Agent", "ToolSearch", "AskUserQuestion", "ExitPlanMode"})
+
+_SANDBOX_PATH_FIELDS: dict[str, str] = {
+    "ReadFile": "file_path",
+    "WriteFile": "file_path",
+    "EditFile": "file_path",
+    "Glob": "path",
+    "Grep": "path",
+}
+
+
+def _extract_sandbox_path(tool_name: str, arguments: dict[str, Any]) -> str:
+    field_name = _SANDBOX_PATH_FIELDS.get(tool_name)
+    if field_name is None:
+        return ""
+    return str(arguments.get(field_name, ""))
 
 
 @dataclass
@@ -92,7 +107,10 @@ class PermissionChecker:
                 return Decision(effect="allow", reason="Plan mode: allowed tool")
             if tool.name in ("WriteFile", "EditFile") and content:
                 if self._is_plan_file(content):
-                    return Decision(effect="allow", reason="Plan mode: plan file write")
+                    ok, reason = self.sandbox.check(content, write=True)
+                    if ok:
+                        return Decision(effect="allow", reason="Plan mode: plan file write")
+                    return Decision(effect="ask", reason=f"路径沙箱拦截: {reason}")
 
         # Layer 1: 安全的只读命令（自动放行）
         if tool.category == "command" and is_safe_command(content or ""):
@@ -126,8 +144,12 @@ class PermissionChecker:
             return Decision(effect="allow", reason="OS 沙箱自动放行")
 
         # Layer 2: 路径沙箱（仅文件类工具）
-        if tool.category in ("read", "write") and content:
-            ok, reason = self.sandbox.check(content)
+        sandbox_path = _extract_sandbox_path(tool.name, arguments)
+        if tool.category in ("read", "write") and sandbox_path:
+            ok, reason = self.sandbox.check(
+                sandbox_path,
+                write=tool.category == "write",
+            )
             if not ok and self.mode != PermissionMode.BYPASS:
                 return Decision(effect="ask", reason=f"路径沙箱拦截: {reason}")
 
@@ -155,14 +177,14 @@ class PermissionChecker:
 
     def _is_plan_file(self, target_path: str) -> bool:
         if not self.plan_file_path or not target_path:
-            return ".mewcode/plans/" in target_path
+            return False
         try:
-            abs_target = os.path.abspath(target_path)
-            abs_plan = os.path.abspath(self.plan_file_path)
-            if abs_target == abs_plan:
-                return True
-        except Exception:
-            pass
-        if os.path.basename(target_path) == os.path.basename(self.plan_file_path):
-            return True
-        return ".mewcode/plans/" in target_path
+            target = Path(target_path).expanduser()
+            plan = Path(self.plan_file_path).expanduser()
+            if not target.is_absolute():
+                target = self.sandbox.project_root / target
+            if not plan.is_absolute():
+                plan = self.sandbox.project_root / plan
+            return target.resolve() == plan.resolve()
+        except (OSError, RuntimeError):
+            return False

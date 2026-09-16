@@ -9,7 +9,7 @@
 | ✅ | 3 | Conversation、Prompt 与入口 | 非交互 text/stream-json 场景 |
 | ✅ | 4 | Tool 抽象与六个核心工具 | 文件、Diff、Glob、Grep、Bash 定向测试 |
 | ✅ | 5 | ReAct Agent Loop | Mock LLM 多轮工具闭环 |
-| ⬜ | 6 | Permission、Plan 与 Sandbox | allow/ask/deny 安全矩阵 |
+| ✅ | 6 | Permission、Plan 与 Sandbox | allow/ask/deny 安全矩阵 |
 | ⬜ | 7 | MCP 与 ToolSearch | Fake MCP 集成和首次全量回归 |
 | ⬜ | 8 | Context 与 Recovery | 压缩边界、落盘和恢复测试 |
 | ⬜ | 9 | Session 与 Memory | 重启恢复和长期记忆注入 |

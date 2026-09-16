@@ -113,3 +113,15 @@ Day 5 新增 `tests/test_agent_loop.py` 的 2 个确定性场景：两轮工具�
 - Agent、入口与权限扩展回归：78 passed、1 skipped、1 deselected。
 
 扩展回归排除了既有 `tests/test_agent.py::test_multi_step_autonomous` Windows `/tmp` 红线。Day 4 修正 Bash 非零退出码后，权限测试改用 `git --version` 验证规则放行，避免 `git status` 的仓库信任状态污染权限断言。
+
+## 11. Day 6 安全矩阵结果
+
+Day 6 新增 `tests/test_permission_boundaries.py`，共 5 个用例，验证精确 Plan 文件、外部伪造路径、Glob/Grep 搜索根和敏感配置读写差异。
+
+- 新安全边界：5 passed。
+- 权限模块：58 passed、1 skipped。
+- Permission、Hook、Bash、Agent 联合门禁：142 passed、1 skipped、3 deselected。
+
+联合门禁只排除文档已登记的三项：Unix `/tmp`、Unix `sleep` 和主 Agent Hook 绕过。三项单独复核时，后两项稳定失败；`/tmp` 用例在获批的非沙箱进程中可写而通过，说明它是环境相关的跨平台缺口，并不代表测试已修复。
+
+尝试运行不透明的整包测试与大分组测试时，执行审批被拒绝；未将这些 `aborted` 结果当作通过。Day 7 的首次全量回归仍按路线图保留，届时应在明确隔离的测试环境中执行。
