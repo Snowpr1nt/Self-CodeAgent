@@ -103,3 +103,13 @@ Day 4 新增 `tests/test_tools.py`，覆盖默认注册表、Provider Schema、�
 - GREEN 阶段四项全部通过，没有通过删断言或放宽错误条件制造绿色结果。
 
 在受限 Windows 沙箱中，pytest 创建的 `--basetemp` 目录可能被 ACL 阻止再次访问；此时出现的大量 `PermissionError` 属于测试环境失败，不能当成功能回归结论。可信全量门禁必须在进程可读写的仓库外隔离目录运行。
+
+## 10. Day 5 Agent Loop 结果
+
+Day 5 新增 `tests/test_agent_loop.py` 的 2 个确定性场景：两轮工具闭环，以及 Provider 在工具启动后断线的异常收尾。
+
+- 新测试：2 passed。
+- Agent 邻接：18 passed、1 deselected。
+- Agent、入口与权限扩展回归：78 passed、1 skipped、1 deselected。
+
+扩展回归排除了既有 `tests/test_agent.py::test_multi_step_autonomous` Windows `/tmp` 红线。Day 4 修正 Bash 非零退出码后，权限测试改用 `git --version` 验证规则放行，避免 `git status` 的仓库信任状态污染权限断言。

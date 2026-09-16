@@ -295,6 +295,15 @@ class StreamingExecutor:
                 out.append(r)
         return out
 
+    async def cancel_pending(self) -> None:
+        tasks = [task for _, task in self._tasks]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._tasks.clear()
+
 
 # ---------------------------------------------------------------------------
 # Agent 主循环
@@ -566,21 +575,27 @@ class Agent:
             executor = StreamingExecutor()
             deferred_tool_calls: list[ToolCallComplete] = []
             llm_stream = self.client.stream(conversation, system=system, tools=tools)
-            async for event in collector.consume(llm_stream):
-                # 流式工具执行：收到完整 tool_use 就立刻提交执行，不等整个响应结束
-                if isinstance(event, ToolUseEvent):
-                    tc = collector.response.tool_calls[-1]
-                    # 需要交互式权限确认的工具延迟到流结束后顺序执行
-                    tool = self.registry.get(tc.tool_name)
-                    needs_ask = False
-                    if tool and self.permission_checker:
-                        decision = self.permission_checker.check(tool, tc.arguments)
-                        needs_ask = decision.effect == "ask"
-                    if needs_ask:
-                        deferred_tool_calls.append(tc)
-                    else:
-                        executor.submit(self._execute_single_tool_direct(tc))
-                yield event
+            try:
+                async for event in collector.consume(llm_stream):
+                    # 流式工具执行：收到完整 tool_use 就立刻提交执行，不等整个响应结束
+                    if isinstance(event, ToolUseEvent):
+                        tc = collector.response.tool_calls[-1]
+                        # 需要交互式权限确认的工具延迟到流结束后顺序执行
+                        tool = self.registry.get(tc.tool_name)
+                        needs_ask = False
+                        if tool and self.permission_checker:
+                            decision = self.permission_checker.check(tool, tc.arguments)
+                            needs_ask = decision.effect == "ask"
+                        if needs_ask:
+                            deferred_tool_calls.append(tc)
+                        else:
+                            executor.submit(self._execute_single_tool_direct(tc))
+                    yield event
+            except Exception as exc:
+                await executor.cancel_pending()
+                log.warning("LLM stream failed: %s", exc)
+                yield ErrorEvent(message=f"LLM stream failed: {exc}")
+                break
 
             response = collector.response
 
