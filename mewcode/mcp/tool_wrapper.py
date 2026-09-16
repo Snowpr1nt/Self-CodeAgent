@@ -68,7 +68,7 @@ class MCPToolWrapper(Tool):
         self._server_name = server_name
         self._tool_def = tool_def
         self._client = client
-        self.name = f"mcp_{server_name}_{tool_def.name}"
+        self.name = f"mcp__{server_name}__{tool_def.name}"
         self.description = tool_def.description or tool_def.name
         self.category = "command"
         self.is_concurrency_safe = False
@@ -105,7 +105,10 @@ class MCPToolWrapper(Tool):
                 self._tool_def.name, params.model_dump(exclude_none=True)
             )
         except Exception as e:
-            self._client._alive = False
+            try:
+                await self._client.close()
+            except Exception:
+                pass
             return ToolResult(
                 output=f"MCP tool call failed: {e}",
                 is_error=True,

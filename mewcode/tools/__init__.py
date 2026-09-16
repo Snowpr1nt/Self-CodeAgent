@@ -103,6 +103,8 @@ class ToolRegistry:
             tool = self._tools.get(name)
             if tool is None:
                 continue
+            if name in self._disabled:
+                continue
             if not getattr(tool, "should_defer", False):
                 continue
             base = tool.get_schema()

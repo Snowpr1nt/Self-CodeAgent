@@ -125,3 +125,16 @@ Day 6 新增 `tests/test_permission_boundaries.py`，共 5 个用例，验证精
 联合门禁只排除文档已登记的三项：Unix `/tmp`、Unix `sleep` 和主 Agent Hook 绕过。三项单独复核时，后两项稳定失败；`/tmp` 用例在获批的非沙箱进程中可写而通过，说明它是环境相关的跨平台缺口，并不代表测试已修复。
 
 尝试运行不透明的整包测试与大分组测试时，执行审批被拒绝；未将这些 `aborted` 结果当作通过。Day 7 的首次全量回归仍按路线图保留，届时应在明确隔离的测试环境中执行。
+
+## 12. Day 7 MCP 与首次全量回归
+
+Day 7 新增 `tests/test_mcp_integration.py` 的 4 个场景，覆盖 Fake MCP 注册/发现/调用/关闭、SubAgent 识别、禁用工具发现和失败连接释放。
+
+- RED：28 passed、7 failed。
+- MCP、ToolSearch、SubAgent、Teams 邻接回归：144 passed。
+- 新集成与 ToolSearch 最终快速门禁：15 passed。
+- 全量收集：614 tests。
+
+第一次整包门禁明确排除三条已登记红线，执行结果为 565 passed、44 failed、2 skipped、3 deselected、1 warning。44 个失败全部是受限 Windows 沙箱无法访问 Python/pytest 以 `0700` 创建的临时目录，堆栈统一为 `PermissionError`；没有新增产品断言失败。
+
+一次性测试启动器验证 pytest `tmp_path` 放宽目录模式后可继续运行，但标准库 `tempfile.TemporaryDirectory` 仍受同一 ACL 限制。非沙箱整包与受影响分组的执行审批随后被拒绝，因此保留环境失败记录，不声明全量绿色。Day 7 功能相关的 144 项邻接测试已在可写隔离目录通过。
