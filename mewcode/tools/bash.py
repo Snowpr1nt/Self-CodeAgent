@@ -152,8 +152,7 @@ class Bash(Tool):
         # 合并流输出，不再区分 stdout/stderr
         output = stdout.decode(errors="replace") if stdout else ""
 
-        # 非零退出码时追加退出码信息，但 is_error 始终为 False
-        # 只有超时和异常才设置 is_error=True
+        # 非零退出码时追加语义提示，并按命令约定判断是否属于错误
         exit_code = proc.returncode or 0
         if exit_code != 0:
             hint = _exit_code_hint(params.command, exit_code)
@@ -165,5 +164,7 @@ class Bash(Tool):
         if not output:
             output = "(no output)"
 
-        return ToolResult(output=output, is_error=False)
-
+        return ToolResult(
+            output=output,
+            is_error=_interpret_exit_code(params.command, exit_code),
+        )

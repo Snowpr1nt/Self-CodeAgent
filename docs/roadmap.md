@@ -7,7 +7,7 @@
 | ✅ | 1 | Git、uv、架构与测试基线 | 原始源码标签、锁定环境、架构图、测试报告、学习日志 |
 | ✅ | 2 | 配置与 LLM Client | Mock Provider 流式测试；真实 API Smoke 等待测试 Key |
 | ✅ | 3 | Conversation、Prompt 与入口 | 非交互 text/stream-json 场景 |
-| ⬜ | 4 | Tool 抽象与六个核心工具 | 文件、Diff、Glob、Grep、Bash 定向测试 |
+| ✅ | 4 | Tool 抽象与六个核心工具 | 文件、Diff、Glob、Grep、Bash 定向测试 |
 | ⬜ | 5 | ReAct Agent Loop | Mock LLM 多轮工具闭环 |
 | ⬜ | 6 | Permission、Plan 与 Sandbox | allow/ask/deny 安全矩阵 |
 | ⬜ | 7 | MCP 与 ToolSearch | Fake MCP 集成和首次全量回归 |

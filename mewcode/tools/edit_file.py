@@ -71,7 +71,7 @@ class EditFile(Tool):
         new_content = content.replace(params.old_string, params.new_string, 1)
         try:
             path.write_text(new_content, encoding="utf-8")
-            if self._cache:
+            if self._cache is not None:
                 self._cache.invalidate(str(path.resolve()))
             if self._state_cache:
                 self._state_cache.update(str(path.resolve()))

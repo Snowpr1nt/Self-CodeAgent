@@ -93,3 +93,13 @@ Day 3 新增 `tests/test_entrypoints.py`，增加 7 个用例。总收集数由 
 入口、Serialization 与 Agent 邻接测试为 32 passed、1 deselected。语法检查和 `mewcode --help` CLI Smoke 同时通过。
 
 在沙箱中运行全量测试时，pytest 的 `--basetemp` 应位于仓库外，`HOME` 与 `USERPROFILE` 也应指向可写隔离目录。否则指令文件会沿父目录搜索到仓库的 `MEWCODE.md`，用户级 Team 文件也可能因真实主目录不可写而产生环境性失败。
+
+## 9. Day 4 工具层结果
+
+Day 4 新增 `tests/test_tools.py`，覆盖默认注册表、Provider Schema、文件状态协议、Glob/Grep 和 Bash 退出码，共增加 11 个用例。
+
+- 工具、EditFile 与 Diff 邻接测试：18 passed。
+- RED 阶段稳定复现 4 项缺陷：同时间戳内容冲突、陈旧读取、空缓存未填充、普通非零退出码未报错。
+- GREEN 阶段四项全部通过，没有通过删断言或放宽错误条件制造绿色结果。
+
+在受限 Windows 沙箱中，pytest 创建的 `--basetemp` 目录可能被 ACL 阻止再次访问；此时出现的大量 `PermissionError` 属于测试环境失败，不能当成功能回归结论。可信全量门禁必须在进程可读写的仓库外隔离目录运行。

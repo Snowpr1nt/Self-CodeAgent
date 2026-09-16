@@ -46,10 +46,15 @@ class ReadFile(Tool):
         resolved = str(path.resolve())
 
         try:
-            text = self._cache.get(resolved) if self._cache else None
+            text = self._cache.get(resolved) if self._cache is not None else None
+            if text is not None and self._state_cache is not None:
+                is_current, _ = self._state_cache.check(resolved)
+                if not is_current:
+                    text = None
+                    self._cache.invalidate(resolved)
             if text is None:
                 text = path.read_text(encoding="utf-8")
-                if self._cache:
+                if self._cache is not None:
                     self._cache.put(resolved, text)
         except Exception as e:
             return ToolResult(output=f"Error reading file: {e}", is_error=True)

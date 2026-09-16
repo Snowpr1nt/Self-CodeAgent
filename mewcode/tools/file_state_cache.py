@@ -33,15 +33,24 @@ class FileStateCache:
         if entry is None:
             return False, "Error: file has not been read yet. Read it first before editing."
 
-        _, cached_mtime_ns = entry
+        cached_content, cached_mtime_ns = entry
         try:
-            current_mtime_ns = Path(path).stat().st_mtime_ns
+            file_path = Path(path)
+            current_mtime_ns = file_path.stat().st_mtime_ns
         except OSError:
             # File may have been deleted; allow the write to proceed
             # (WriteFile will create it, EditFile will fail on its own).
             return True, ""
 
         if current_mtime_ns != cached_mtime_ns:
+            return False, "Error: file has been modified since last read. Read it again before editing."
+
+        try:
+            current_content = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return False, "Error: file could not be verified. Read it again before editing."
+
+        if current_content != cached_content:
             return False, "Error: file has been modified since last read. Read it again before editing."
 
         return True, ""

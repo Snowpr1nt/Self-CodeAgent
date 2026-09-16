@@ -53,7 +53,7 @@ class WriteFile(Tool):
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(params.content, encoding="utf-8")
-            if self._cache:
+            if self._cache is not None:
                 self._cache.invalidate(str(path.resolve()))
             if self._state_cache:
                 self._state_cache.update(str(path.resolve()))
