@@ -4,6 +4,7 @@
 # 简历模版：jianli.xiaolinnote.com
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -49,6 +50,14 @@ MIN_SUMMARIZE_PREFIX_TOKENS = 2_000
 PERSISTED_TAG = "<persisted-output>"
 
 SESSION_SUBDIR = ".mewcode/session/tool-results"
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +143,18 @@ def load_replacement_records(session_dir: Path) -> list[ContentReplacementRecord
             line = line.strip()
             if not line:
                 continue
-            obj = json.loads(line)
+            try:
+                obj = json.loads(line)
+                tool_use_id = obj["tool_use_id"]
+                replacement = obj["replacement"]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+            if not isinstance(tool_use_id, str) or not isinstance(replacement, str):
+                continue
             out.append(ContentReplacementRecord(
                 kind=obj.get("kind", "tool-result"),
-                tool_use_id=obj["tool_use_id"],
-                replacement=obj["replacement"],
+                tool_use_id=tool_use_id,
+                replacement=replacement,
             ))
     return out
 
@@ -174,10 +190,40 @@ def ensure_session_dir(work_dir: str) -> Path:
     return session_dir
 
 
-def cleanup_tool_results(session_dir: Path) -> None:
-    if session_dir.exists():
-        shutil.rmtree(session_dir)
-        session_dir.mkdir(parents=True, exist_ok=True)
+def _tool_result_path(tool_use_id: str, session_dir: Path) -> Path:
+    stem = tool_use_id.split(".", 1)[0].upper()
+    is_safe = (
+        bool(tool_use_id)
+        and tool_use_id.isascii()
+        and len(tool_use_id) <= 128
+        and tool_use_id not in {".", ".."}
+        and stem not in _WINDOWS_RESERVED_NAMES
+        and all(char.isalnum() or char in "._-" for char in tool_use_id)
+    )
+    if is_safe:
+        filename = f"{tool_use_id}.txt"
+    else:
+        digest = hashlib.sha256(tool_use_id.encode("utf-8")).hexdigest()[:32]
+        filename = f"tool-{digest}.txt"
+    return session_dir / filename
+
+
+def cleanup_tool_results(
+    session_dir: Path,
+    keep_tool_use_ids: set[str] | None = None,
+) -> None:
+    session_dir.mkdir(parents=True, exist_ok=True)
+    keep_names = {
+        _tool_result_path(tool_use_id, session_dir).name
+        for tool_use_id in keep_tool_use_ids or set()
+    }
+    for path in session_dir.iterdir():
+        if path.name in keep_names:
+            continue
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +231,8 @@ def cleanup_tool_results(session_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def persist_tool_result(tool_use_id: str, content: str, session_dir: Path) -> Path:
-    file_path = session_dir / f"{tool_use_id}.txt"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    file_path = _tool_result_path(tool_use_id, session_dir)
     try:
         fd = os.open(str(file_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -218,8 +265,12 @@ def _is_spill_readback(tool_use_id: str, tool_use_index: dict, abs_spill_dir: st
     raw = tu.arguments.get("file_path", "")
     if not raw:
         return False
-    abs_path = os.path.abspath(raw)
-    return abs_path.startswith(abs_spill_dir)
+    try:
+        path = Path(raw).resolve(strict=False)
+        spill_dir = Path(abs_spill_dir).resolve(strict=False)
+    except OSError:
+        return False
+    return path.is_relative_to(spill_dir)
 
 
 def apply_tool_result_budget(
@@ -851,23 +902,32 @@ async def auto_compact(
 
     max_retries = 3
     llm_output: str | None = None
+    retry_failure = "摘要流未正常结束"
 
     for attempt in range(max_retries):
         try:
-            from mewcode.tools.base import StreamEnd, StreamEvent, TextDelta
+            from mewcode.tools.base import StreamEnd, TextDelta
 
             collected_text = ""
+            stream_completed = False
             async for event in client.stream(summary_conv, system=SUMMARY_PROMPT, tools=tool_schemas):
                 if isinstance(event, TextDelta):
                     collected_text += event.text
                 elif isinstance(event, StreamEnd):
-                    pass
+                    stream_completed = True
+            if not stream_completed:
+                retry_failure = "摘要流中断"
+                continue
+            if not collected_text.strip():
+                retry_failure = "摘要流未返回文本"
+                continue
             llm_output = collected_text
             break
 
         except Exception as e:
             err_msg = str(e).lower()
             if "prompt" in err_msg and "long" in err_msg or "too many" in err_msg:
+                retry_failure = "多次重试后仍超出上下文限制"
                 groups = _group_messages_by_turn(summary_conv.history[1:-1])
                 drop_count = max(1, len(groups) // 5)
                 remaining = groups[drop_count:]
@@ -884,7 +944,7 @@ async def auto_compact(
     if llm_output is None:
         if breaker is not None:
             breaker.record_failure()
-        return "摘要生成失败：多次重试后仍超出上下文限制"
+        return f"摘要生成失败：{retry_failure}（自动重试 {max_retries} 次）"
 
     summary = extract_summary(llm_output)
     attachment = build_recovery_attachment(recovery, tool_schemas)
@@ -903,7 +963,13 @@ async def auto_compact(
     # 不清零会导致 current_tokens() 对增量的估算出错。
     # 下一次 API 响应会基于重建后的 history 重新锚定。
     conversation.replace_history(new_messages)
-    cleanup_tool_results(session_dir)
+    keep_tool_use_ids = {
+        tool_result.tool_use_id
+        for message in keep_tail
+        for tool_result in message.tool_results
+        if tool_result.content.startswith(PERSISTED_TAG)
+    }
+    cleanup_tool_results(session_dir, keep_tool_use_ids)
 
     if breaker is not None:
         breaker.record_success()

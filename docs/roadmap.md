@@ -11,7 +11,7 @@
 | ✅ | 5 | ReAct Agent Loop | Mock LLM 多轮工具闭环 |
 | ✅ | 6 | Permission、Plan 与 Sandbox | allow/ask/deny 安全矩阵 |
 | ✅ | 7 | MCP 与 ToolSearch | Fake MCP 集成和首次全量回归 |
-| ⬜ | 8 | Context 与 Recovery | 压缩边界、落盘和恢复测试 |
+| ✅ | 8 | Context 与 Recovery | 压缩边界、落盘和恢复测试 |
 | ⬜ | 9 | Session 与 Memory | 重启恢复和长期记忆注入 |
 | ⬜ | 10 | Slash Command 与 Skill | 自定义 Command/Skill 端到端示例 |
 | ⬜ | 11 | Hook 与跨平台测试 | 修复 Hook 绕过和 Windows 测试问题 |

@@ -138,3 +138,16 @@ Day 7 新增 `tests/test_mcp_integration.py` 的 4 个场景，覆盖 Fake MCP �
 第一次整包门禁明确排除三条已登记红线，执行结果为 565 passed、44 failed、2 skipped、3 deselected、1 warning。44 个失败全部是受限 Windows 沙箱无法访问 Python/pytest 以 `0700` 创建的临时目录，堆栈统一为 `PermissionError`；没有新增产品断言失败。
 
 一次性测试启动器验证 pytest `tmp_path` 放宽目录模式后可继续运行，但标准库 `tempfile.TemporaryDirectory` 仍受同一 ACL 限制。非沙箱整包与受影响分组的执行审批随后被拒绝，因此保留环境失败记录，不声明全量绿色。Day 7 功能相关的 144 项邻接测试已在可写隔离目录通过。
+
+## 13. Day 8 Context 与 Recovery
+
+Day 8 新增 `tests/test_context_recovery_integration.py` 的 6 个集成场景、8 个测试用例，覆盖落盘路径约束、跨平台文件名、真实目录边界、截断 JSONL 恢复、摘要流中断重试和压缩后落盘文件保留。
+
+- RED：第一轮 5 failed；代码审阅补充的跨平台循环 3 failed。
+- 新增测试 GREEN：8 passed。
+- Context、Recovery、Replacement、Context Window、Session/Memory 邻接回归：159 passed。
+- Command、Entrypoint、Skill 邻接回归：82 passed。
+- Agent 主循环：16 passed、1 deselected；只排除已登记红色基线 `tests/test_agent.py::test_multi_step_autonomous`。
+- 最终合并门禁：257 passed、1 deselected。
+
+首次基线在受限沙箱中得到 95 passed、56 errors；56 项全部停在 pytest `tmp_path` 建立阶段，原因为 Windows 临时目录 ACL 的 `PermissionError: WinError 5`，不是产品断言失败。同一幂等命令自动改用获批隔离临时目录重跑后得到 151 passed，记录了完整的失败原因和恢复结果。
