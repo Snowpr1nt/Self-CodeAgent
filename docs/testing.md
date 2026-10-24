@@ -165,3 +165,7 @@ Day 8 新增 `tests/test_context_recovery_integration.py` 的 6 个集成场景�
 ### Day 9 最终收尾（2026-10-23）
 
 在本轮仓库外专用 basetemp，以获批宿主权限重跑 Windows ACL 失败的幂等测试。新增 RED 首轮 5 failed/4 passed，命令切换与 ID 边界补充 4 failed/9 passed；独立审阅补充压缩通知游标测试 RED 为 1 failed。最终 `test_session_recovery.py test_memory.py test_context.py test_replacement_state.py test_agent_loop.py test_commands.py`：**170 passed in 4.07s**，没有排除用例。Recovery 使用实际 TUI 持久化方法和磁盘 Session 恢复，后台入口覆盖已有/新建 Conversation 与真实压缩。先前 aborted 的未知原因记录不变，现已取得新的完整门禁输出。
+
+### Day 10 Slash Command 与 Skill
+
+真实目录发现、Command 注册/别名、参数展开、Skill inline/fork、Recovery 记录及 fork 权限测试先有 11 failed 的 RED。最终 `test_commands.py test_skills.py test_commands_skills_integration.py test_recovery.py test_context_recovery_integration.py test_session_recovery.py`：**116 passed in 3.27s**。`python -m examples.commands_skills.run_demo --scratch-dir <本轮仓库外根目录>` exit 0，Fake Provider 收到 3 次请求；这不是在线模型验收。首次 Windows 沙箱 `WinError 5` 后在宿主权限下重跑；额度服务拒绝过一次 GREEN 命令，最终成功证据来自恢复后新的完整门禁。

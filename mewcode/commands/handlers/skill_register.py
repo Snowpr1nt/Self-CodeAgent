@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 from mewcode.commands.registry import Command, CommandContext, CommandRegistry, CommandType
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_REGISTERED_SKILL_NAMES: set[str] = set()
+_REGISTERED_SKILL_NAMES: WeakKeyDictionary[CommandRegistry, set[str]] = WeakKeyDictionary()
 
 
 def register_skill_commands(
@@ -25,13 +26,14 @@ def register_skill_commands(
     loader: SkillLoader,
     executor: SkillExecutor | None = None,
 ) -> None:
-    for name in list(_REGISTERED_SKILL_NAMES):
+    registered_names = _REGISTERED_SKILL_NAMES.setdefault(registry, set())
+    for name in list(registered_names):
         if registry.find(name) is not None:
             registry._commands.pop(name, None)
             registry._alias_map = {
                 k: v for k, v in registry._alias_map.items() if v != name
             }
-        _REGISTERED_SKILL_NAMES.discard(name)
+        registered_names.discard(name)
 
     for skill_name, skill_desc in loader.get_catalog():
         if registry.find(skill_name) is not None:
@@ -81,8 +83,8 @@ def register_skill_commands(
                     ctx.ui.add_system_message(
                         f"skill({name})\nSuccessfully loaded skill"
                     )
-                    trigger = ctx.args if ctx.args else f"/{name}"
-                    ctx.ui.send_user_message(trigger)
+                    from mewcode.skills.parser import substitute_arguments
+                    ctx.ui.send_user_message(substitute_arguments(skill.prompt_body, ctx.args))
 
             return handler
 
@@ -96,6 +98,6 @@ def register_skill_commands(
 
         try:
             registry.register_sync(cmd)
-            _REGISTERED_SKILL_NAMES.add(s_name)
+            registered_names.add(s_name)
         except ValueError as e:
             log.warning("Cannot register skill command '%s': %s", s_name, e)

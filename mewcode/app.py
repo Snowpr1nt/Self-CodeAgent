@@ -829,10 +829,6 @@ class MewCodeApp(App):
             )
             self.agent.set_skill_catalog("\n".join(lines))
 
-        register_skill_commands(
-            self.command_registry, self.skill_loader, self.skill_executor
-        )
-
         # 安装新 skill 后重新注册斜杠命令，让 /<new-skill> 立即可用
         def _on_skill_installed(name: str) -> None:
             register_skill_commands(
@@ -940,6 +936,12 @@ class MewCodeApp(App):
         from mewcode.commands.handlers.trace import create_trace_command
         trace_cmd = create_trace_command(self.trace_manager, self.agent.agent_id)
         self.command_registry.register_sync(trace_cmd)
+
+        from mewcode.commands.loader import register_user_commands
+        register_user_commands(self.command_registry, work_dir)
+        register_skill_commands(
+            self.command_registry, self.skill_loader, self.skill_executor
+        )
 
         # --- 协调者模式初始化（工具已注册，激活推迟到 TeamCreate 时） ---
         from mewcode.tools.synthetic_output import SyntheticOutputTool

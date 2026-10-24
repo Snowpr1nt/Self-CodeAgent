@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from mewcode.commands.registry import Command, CommandContext, CommandType
+from mewcode.commands.registry import Command, CommandContext, CommandRegistry, CommandType
 
 log = logging.getLogger(__name__)
 
@@ -152,3 +152,15 @@ def load_user_commands(work_dir: str) -> list[Command]:
             merged[cmd.name] = cmd
 
     return [merged[n] for n in order]
+
+
+def register_user_commands(registry: CommandRegistry, work_dir: str) -> None:
+    """Register merged prompt commands after builtins and before skill commands.
+
+    A conflicting custom name or alias never replaces an existing command.
+    """
+    for command in load_user_commands(work_dir):
+        try:
+            registry.register_sync(command)
+        except ValueError as exc:
+            log.warning("Cannot register custom command '%s': %s", command.name, exc)

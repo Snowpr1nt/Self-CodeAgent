@@ -1,0 +1,4 @@
+name: second-opinion
+description: Review a claim in a separate Agent conversation
+mode: fork
+context: recent

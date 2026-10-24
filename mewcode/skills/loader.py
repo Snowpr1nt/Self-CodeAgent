@@ -145,7 +145,13 @@ class SkillLoader:
 
         if skill.source_path is not None:
             try:
-                fresh = parse_skill_file(skill.source_path)
+                yaml_path = skill.source_path.parent / "skill.yaml"
+                if skill.is_directory and yaml_path.is_file():
+                    fresh = self._parse_skill_yaml(yaml_path, yaml_path.parent)
+                    if fresh is None:
+                        return self._cache.get(name, skill)
+                else:
+                    fresh = parse_skill_file(skill.source_path)
                 fresh.is_directory = skill.is_directory
                 self._skills[name] = fresh
                 self._cache[name] = fresh

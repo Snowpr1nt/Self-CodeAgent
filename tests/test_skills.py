@@ -23,6 +23,12 @@ from mewcode.skills.parser import (
 from mewcode.skills.loader import SkillLoader
 from mewcode.tools import ToolRegistry
 
+
+@pytest.fixture(autouse=True)
+def isolate_user_skills(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skill tests discover only their fixtures, never the developer's installed skills."""
+    monkeypatch.setattr("mewcode.skills.loader.USER_SKILLS_DIR", str(tmp_path / "user-skills"))
+
 # ---------------------------------------------------------------------------
 # 辅助工具
 # ---------------------------------------------------------------------------

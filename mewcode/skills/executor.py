@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+from copy import copy
 from typing import TYPE_CHECKING
 
 from mewcode.conversation import ConversationManager, Message
@@ -46,7 +47,7 @@ class SkillExecutor:
         prompt = substitute_arguments(skill.prompt_body, args)
         if getattr(self.agent, "recovery_state", None) is not None:
             self.agent.recovery_state.record_skill_invocation(
-                skill.name, skill.prompt_body
+                skill.name, prompt
             )
 
         fork_conv = ConversationManager()
@@ -60,7 +61,10 @@ class SkillExecutor:
 
         fork_conv.add_user_message(prompt)
 
-        from mewcode.agent import Agent as AgentClass, StreamText, LoopComplete, ErrorEvent
+        from mewcode.agent import (
+            Agent as AgentClass, StreamText, LoopComplete, ErrorEvent,
+            PermissionRequest, PermissionResponse,
+        )
 
         fork_agent = AgentClass(
             client=self.client,
@@ -68,9 +72,14 @@ class SkillExecutor:
             protocol=self.protocol,
             work_dir=self.agent.work_dir,
             max_iterations=self.agent.max_iterations,
-            permission_checker=None,
+            permission_checker=copy(self.agent.permission_checker),
             context_window=self.agent.context_window,
+            instructions_content=self.agent.instructions_content,
+            hook_engine=self.agent.hook_engine,
         )
+        fork_agent.set_permission_mode(self.agent.permission_mode)
+        fork_agent.activate_skill(skill.name, prompt)
+        fork_agent.recovery_state.record_skill_invocation(skill.name, prompt)
 
         result_parts: list[str] = []
         async for event in fork_agent.run(fork_conv):
@@ -78,6 +87,11 @@ class SkillExecutor:
                 result_parts.append(event.text)
             elif isinstance(event, ErrorEvent):
                 result_parts.append(f"\n[Error: {event.message}]")
+            elif isinstance(event, PermissionRequest):
+                # Fork results are collected in a background task without a permission UI.
+                # Keep the parent's policy and fail closed instead of awaiting forever.
+                if not event.future.done():
+                    event.future.set_result(PermissionResponse.DENY)
             elif isinstance(event, LoopComplete):
                 break
 
@@ -88,7 +102,8 @@ class SkillExecutor:
         if mode == "none":
             return []
 
-        history = self.agent._conversation.history if hasattr(self.agent, '_conversation') else []
+        conversation = getattr(self.agent, "_current_conversation", None)
+        history = conversation.history if conversation is not None else []
         if not history:
             main_history = []
         else:

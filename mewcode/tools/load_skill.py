@@ -61,6 +61,9 @@ class LoadSkill(Tool):
             )
 
         self._agent.activate_skill(skill.name, skill.prompt_body)
+        recovery = getattr(self._agent, "recovery_state", None)
+        if recovery is not None:
+            recovery.record_skill_invocation(skill.name, skill.prompt_body)
 
         header = f"# Skill: {skill.name}\n\n"
         return ToolResult(output=header + skill.prompt_body)
