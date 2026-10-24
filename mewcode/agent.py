@@ -31,9 +31,10 @@ from mewcode.context import (
     load_replacement_records,
     reconstruct_replacement_state,
 )
-from mewcode.conversation import ConversationManager, ToolResultBlock, ToolUseBlock
+from mewcode.conversation import ConversationManager, Message, ToolResultBlock, ToolUseBlock
 from mewcode.conversation import ThinkingBlock as ConvThinkingBlock
 from mewcode.memory.auto_memory import MemoryManager
+from mewcode.memory.session import _is_safe_session_id
 from mewcode.permissions import (
     Decision,
     PermissionChecker,
@@ -379,6 +380,37 @@ class Agent:
             return str(Path(self.work_dir) / ".mewcode" / "sessions" / f"{self.session_id}.jsonl")
         return ""
 
+    def start_session(self, session_id: str) -> None:
+        if not _is_safe_session_id(session_id):
+            raise ValueError("Invalid session ID")
+        session_dir = ensure_session_dir(self.work_dir) / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        self._activate_session(session_id, session_dir)
+
+    def _activate_session(self, session_id: str, session_dir: Path) -> None:
+        self.session_id = session_id
+        self.session_dir = session_dir
+        self.replacement_state = create_replacement_state()
+        self.recovery_state = RecoveryState()
+        self.compact_breaker = CompactCircuitBreaker()
+        self._loop_count = 0
+        self.active_skills.clear()
+        if self.memory_recall_task is not None and not self.memory_recall_task.done():
+            self.memory_recall_task.cancel()
+        self.memory_recall_task = None
+        self._memory_recall_consumed = False
+
+    def restore_session(self, session_id: str, messages: list[Message]) -> None:
+        if not _is_safe_session_id(session_id):
+            raise ValueError("Invalid session ID")
+        legacy_dir = ensure_session_dir(self.work_dir)
+        scoped_dir = legacy_dir / session_id
+        self._activate_session(
+            session_id, scoped_dir if scoped_dir.exists() else legacy_dir
+        )
+        records = load_replacement_records(self.session_dir)
+        self.replacement_state = reconstruct_replacement_state(messages, records)
+
     @property
     def plan_mode(self) -> bool:
         return self.permission_mode == PermissionMode.PLAN
@@ -554,11 +586,6 @@ class Agent:
                 transcript_path=self._transcript_path,
             )
             if isinstance(compact_result, CompactEvent):
-                yield CompactNotification(
-                    before_tokens=compact_result.before_tokens,
-                    message=f"上下文已压缩（压缩前 {compact_result.before_tokens:,} tokens）",
-                    boundary=compact_result.boundary,
-                )
                 conversation.inject_environment(env_context)
                 mem = self.memory_manager.load() if self.memory_manager else ""
                 conversation.inject_long_term_memory(
@@ -567,6 +594,11 @@ class Agent:
                 # 压缩后重新应用 budget（就地修改）
                 apply_tool_result_budget(
                     conversation, self.session_dir, self.replacement_state
+                )
+                yield CompactNotification(
+                    before_tokens=compact_result.before_tokens,
+                    message=f"上下文已压缩（压缩前 {compact_result.before_tokens:,} tokens）",
+                    boundary=compact_result.boundary,
                 )
             elif isinstance(compact_result, str):
                 yield ErrorEvent(message=compact_result)
@@ -1055,16 +1087,14 @@ class Agent:
         if conversation is None:
             conversation = ConversationManager()
 
-            env_context = build_environment_context(
-                self.work_dir, self.active_skills, self._skill_catalog, self._agent_catalog
-            )
-            conversation.inject_environment(env_context)
+        self._current_conversation = conversation
+        env_context = build_environment_context(
+            self.work_dir, self.active_skills, self._skill_catalog, self._agent_catalog
+        )
+        conversation.inject_environment(env_context)
 
-            if self.instructions_content:
-                memory_content = self.memory_manager.load() if self.memory_manager else ""
-                conversation.inject_long_term_memory(
-                    self.instructions_content, memory_content
-                )
+        memory_content = self.memory_manager.load() if self.memory_manager else ""
+        conversation.inject_long_term_memory(self.instructions_content, memory_content)
 
         if task:
             conversation.add_user_message(task)
@@ -1124,6 +1154,8 @@ class Agent:
             )
             if isinstance(compact_result, CompactEvent):
                 conversation.inject_environment(env_context)
+                memory_content = self.memory_manager.load() if self.memory_manager else ""
+                conversation.inject_long_term_memory(self.instructions_content, memory_content)
 
             deferred_names = self.registry.get_deferred_tool_names()
             if deferred_names:

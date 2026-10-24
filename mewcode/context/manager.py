@@ -7,7 +7,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import threading
 import time
 from dataclasses import dataclass, field
@@ -77,6 +76,7 @@ class CompactBoundary:
 
     summary: str
     keep: list[Message]
+    attachment: str = ""
 
 
 @dataclass
@@ -222,8 +222,7 @@ def cleanup_tool_results(
             continue
         if path.is_symlink() or path.is_file():
             path.unlink()
-        elif path.is_dir():
-            shutil.rmtree(path)
+        # Child directories belong to scoped sessions, not this result owner.
 
 
 # ---------------------------------------------------------------------------
@@ -978,5 +977,5 @@ async def auto_compact(
     # 由它持久化为一条 compact_boundary 记录。keep tail 就是拼回重建 history 的那段。
     return CompactEvent(
         before_tokens=before_tokens,
-        boundary=CompactBoundary(summary=summary, keep=list(keep_tail)),
+        boundary=CompactBoundary(summary=summary, keep=list(keep_tail), attachment=attachment),
     )

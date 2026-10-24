@@ -147,7 +147,9 @@ def _message_to_record_dicts(message: Message) -> list[dict[str, Any]]:
     return dicts
 
 
-def make_compact_boundary(summary: str, keep: list[Message]) -> SessionRecord:
+def make_compact_boundary(
+    summary: str, keep: list[Message], attachment: str = "",
+) -> SessionRecord:
     """构建一条 COMPACT_BOUNDARY record，内联摘要和原样保留的 keep 尾部。
 
     `keep` 是 auto_compact 原样保留的近期尾部消息。将其存储在 boundary record
@@ -158,6 +160,8 @@ def make_compact_boundary(summary: str, keep: list[Message]) -> SessionRecord:
     for msg in keep:
         keep_dicts.extend(_message_to_record_dicts(msg))
     payload = {"summary": summary, "keep": keep_dicts}
+    if attachment:
+        payload["attachment"] = attachment
     return SessionRecord(
         type=RecordType.COMPACT_BOUNDARY,
         content=payload,
@@ -243,7 +247,11 @@ def records_to_messages(records: list[SessionRecord]) -> list[Message]:
             # 权威的那一条；但在此展开可以保证 records_to_messages 对任何
             # 直接调用者都保持自洽。
             summary, keep_messages = parse_compact_boundary(record)
-            messages.append(Message(role="user", content="本次会话延续自之前的对话，因上下文空间不足进行了压缩。以下是早期对话的摘要：\n\n" + summary))
+            content = "本次会话延续自之前的对话，因上下文空间不足进行了压缩。以下是早期对话的摘要：\n\n" + summary
+            attachment = record.content.get("attachment", "") if isinstance(record.content, dict) else ""
+            if isinstance(attachment, str) and attachment:
+                content += "\n\n---\n\n" + attachment
+            messages.append(Message(role="user", content=content))
             messages.extend(keep_messages)
             continue
 
@@ -465,6 +473,12 @@ def _generate_session_id() -> str:
     return f"session_{now.strftime('%Y%m%d_%H%M%S')}_{suffix}"
 
 
+def _is_safe_session_id(session_id: str) -> bool:
+    return bool(session_id) and session_id.isascii() and all(
+        char.isalnum() or char in "_-" for char in session_id
+    )
+
+
 class SessionManager:
     def __init__(self, work_dir: str) -> None:
         self._sessions_dir = Path(work_dir) / SESSIONS_DIR
@@ -496,10 +510,12 @@ class SessionManager:
         return metas
 
     def resume(self, session_id: str) -> ResumeResult | None:
+        if not _is_safe_session_id(session_id):
+            return None
         jsonl_path = self._sessions_dir / f"{session_id}.jsonl"
         meta_path = self._sessions_dir / f"{session_id}.meta"
 
-        if not jsonl_path.exists():
+        if not jsonl_path.is_file() or not meta_path.is_file():
             return None
 
         meta = SessionMeta.load(meta_path)
@@ -546,6 +562,8 @@ class SessionManager:
         )
 
     def delete(self, session_id: str) -> bool:
+        if not _is_safe_session_id(session_id):
+            return False
         jsonl_path = self._sessions_dir / f"{session_id}.jsonl"
         meta_path = self._sessions_dir / f"{session_id}.meta"
 

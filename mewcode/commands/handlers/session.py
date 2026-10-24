@@ -77,7 +77,7 @@ async def handle_session(ctx: CommandContext) -> None:
             conv.history.append(msg)
         ctx.config["set_conversation"](conv)
         if ctx.agent:
-            ctx.agent._loop_count = 0
+            ctx.agent.restore_session(session_id, result.messages)
         await ctx.config["render_restored"](result.messages)
         ctx.ui.add_system_message(
             f"会话已恢复: {session_id} ({result.session.meta.message_count} msgs)"
@@ -91,7 +91,7 @@ async def handle_session(ctx: CommandContext) -> None:
         ctx.config["set_session"](new_session)
         ctx.config["set_conversation"](ConversationManager())
         if ctx.agent:
-            ctx.agent._loop_count = 0
+            ctx.agent.start_session(new_session.session_id)
         ctx.config["clear_chat"]()
         ctx.ui.add_system_message(f"新会话已创建: {new_session.session_id}")
 

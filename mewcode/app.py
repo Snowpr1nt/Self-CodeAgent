@@ -789,7 +789,7 @@ class MewCodeApp(App):
             hook_engine=self.hook_engine,
         )
         self.agent.file_history = self.file_history
-        self.agent.session_id = self.session.session_id
+        self.agent.start_session(self.session.session_id)
 
         self._exit_plan_tool._is_plan_mode = lambda: self.agent.plan_mode
         self._exit_plan_tool._plan_exists = lambda: self.agent._get_plan_path().exists()
@@ -1051,9 +1051,16 @@ class MewCodeApp(App):
         )
 
     def _set_session(self, session: Session) -> None:
+        from mewcode.filehistory.history import FileHistory
+
         self.session = session
         if self.agent:
             self.agent.session_id = session.session_id
+            self.file_history = FileHistory(self.agent.work_dir, session.session_id)
+            self.agent.file_history = self.file_history
+            for tool in self.agent.registry._tools.values():
+                if hasattr(tool, "file_history"):
+                    tool.file_history = self.file_history
 
     def _persist_compact_boundary(self, notification: CompactNotification) -> None:
         """Layer-2 compact 后写入 compact_boundary 记录。
@@ -1067,6 +1074,7 @@ class MewCodeApp(App):
         record = make_compact_boundary(
             notification.boundary.summary,
             notification.boundary.keep,
+            attachment=notification.boundary.attachment,
         )
         self.session.append_record(record)
 

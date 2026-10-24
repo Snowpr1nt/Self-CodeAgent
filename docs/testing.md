@@ -151,3 +151,17 @@ Day 8 新增 `tests/test_context_recovery_integration.py` 的 6 个集成场景�
 - 最终合并门禁：257 passed、1 deselected。
 
 首次基线在受限沙箱中得到 95 passed、56 errors；56 项全部停在 pytest `tmp_path` 建立阶段，原因为 Windows 临时目录 ACL 的 `PermissionError: WinError 5`，不是产品断言失败。同一幂等命令自动改用获批隔离临时目录重跑后得到 151 passed，记录了完整的失败原因和恢复结果。
+
+## 14. Day 9 Session 与 Memory
+
+`tests/test_session_recovery.py` 使用真实 Session 文件和两个 Agent 实例覆盖重启恢复、独立工具结果目录、旧版共用目录兼容、会话 ID 路径边界与磁盘 `MEMORY.md` 注入。
+
+- RED：首轮 2 failed；兼容和路径边界补充循环 2 failed。
+- 新测试：4 passed。
+- Session、Memory、Context、Agent Loop、Command 邻接回归：160 passed。
+
+2026-10-23 交接补充：上述 160 passed 发生在长期记忆测试改为真实磁盘索引之前；调整后新测试单独运行得到 4 passed。最后一次提交前合并验证返回 `aborted`，没有可确认结果，工具也未提供中断原因。Day 9 尚未提交，完整门禁待接任模型复核。
+
+### Day 9 最终收尾（2026-10-23）
+
+在本轮仓库外专用 basetemp，以获批宿主权限重跑 Windows ACL 失败的幂等测试。新增 RED 首轮 5 failed/4 passed，命令切换与 ID 边界补充 4 failed/9 passed；独立审阅补充压缩通知游标测试 RED 为 1 failed。最终 `test_session_recovery.py test_memory.py test_context.py test_replacement_state.py test_agent_loop.py test_commands.py`：**170 passed in 4.07s**，没有排除用例。Recovery 使用实际 TUI 持久化方法和磁盘 Session 恢复，后台入口覆盖已有/新建 Conversation 与真实压缩。先前 aborted 的未知原因记录不变，现已取得新的完整门禁输出。
