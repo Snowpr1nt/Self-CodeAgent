@@ -28,4 +28,5 @@ class WorktreeSession:
     original_head_commit: str
     session_id: str = ""
     hook_based: bool = False
+    worktree_base_commit: str = ""
 

@@ -29,6 +29,7 @@ class ReadFile(Tool):
     params_model = Params
     category = "read"
     is_concurrency_safe = True
+    work_dir: str | None = None
 
 
     def __init__(self, file_cache: FileCache | None = None, file_state_cache: FileStateCache | None = None) -> None:
@@ -38,6 +39,8 @@ class ReadFile(Tool):
 
     async def execute(self, params: Params) -> ToolResult:
         path = Path(params.file_path)
+        if self.work_dir is not None and not path.is_absolute():
+            path = Path(self.work_dir) / path
         if not path.exists():
             return ToolResult(output=f"Error: file not found: {params.file_path}", is_error=True)
         if not path.is_file():

@@ -30,6 +30,7 @@ class WriteFile(Tool):
     )
     params_model = Params
     category = "write"
+    work_dir: str | None = None
 
 
     def __init__(self, file_cache: FileCache | None = None, file_history: Any = None, file_state_cache: FileStateCache | None = None) -> None:
@@ -39,10 +40,12 @@ class WriteFile(Tool):
 
 
     async def execute(self, params: Params) -> ToolResult:
-        if self.file_history is not None:
-            self.file_history.track_edit(params.file_path)
-
         path = Path(params.file_path)
+        if self.work_dir is not None and not path.is_absolute():
+            path = Path(self.work_dir) / path
+
+        if self.file_history is not None:
+            self.file_history.track_edit(str(path))
 
         if self._state_cache and path.exists():
             resolved = str(path.resolve())

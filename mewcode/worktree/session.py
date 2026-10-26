@@ -39,6 +39,7 @@ def save_worktree_session(
         "original_head_commit": session.original_head_commit,
         "session_id": session.session_id,
         "hook_based": session.hook_based,
+        "worktree_base_commit": session.worktree_base_commit,
     }
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -59,6 +60,7 @@ def load_worktree_session(mewcode_dir: Path) -> WorktreeSession | None:
             original_head_commit=data["original_head_commit"],
             session_id=data.get("session_id", ""),
             hook_based=data.get("hook_based", False),
+            worktree_base_commit=data.get("worktree_base_commit", ""),
         )
     except (json.JSONDecodeError, KeyError) as e:
         log.warning("Failed to load worktree session: %s", e)

@@ -66,6 +66,8 @@ async def _handle_create(
 
     name = args[0]
     base_branch = args[1] if len(args) > 1 else "HEAD"
+    if ctx.agent:
+        manager.bind_agent(ctx.agent)
 
     try:
         wt = await manager.create(name, base_branch)
@@ -75,8 +77,6 @@ async def _handle_create(
 
     try:
         session = await manager.enter(name)
-        if ctx.agent:
-            ctx.agent.work_dir = wt.path
     except Exception as e:
         ctx.ui.add_system_message(
             f"Worktree 已创建但进入失败: {e}\n路径: {wt.path}"
@@ -121,9 +121,9 @@ async def _handle_enter(
 
     name = args[0]
     try:
-        session = await manager.enter(name)
         if ctx.agent:
-            ctx.agent.work_dir = session.worktree_path
+            manager.bind_agent(ctx.agent)
+        session = await manager.enter(name)
         ctx.ui.add_system_message(f"已进入 worktree: {name}\n路径: {session.worktree_path}")
     except Exception as e:
         ctx.ui.add_system_message(f"进入 worktree 失败: {e}")
@@ -144,9 +144,9 @@ async def _handle_exit(
     action = "remove" if remove else "keep"
 
     try:
-        await manager.exit(session.worktree_name, action=action, discard_changes=discard)
         if ctx.agent:
-            ctx.agent.work_dir = session.original_cwd
+            manager.bind_agent(ctx.agent)
+        await manager.exit(session.worktree_name, action=action, discard_changes=discard)
         msg = f"已退出 worktree: {session.worktree_name}"
         if remove:
             msg += "（已删除）"

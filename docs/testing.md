@@ -177,3 +177,7 @@ Day 8 新增 `tests/test_context_recovery_integration.py` 的 6 个集成场景�
 ### Day 12 SubAgent 与后台任务
 
 先以 Event 控制的 Fake Provider 复现启动前取消、后台 Trace 未结束、禁用工具状态丢失等缺口，再集中修复。主代理最终 `test_subagent_lifecycle.py test_subagent.py test_mcp_integration.py test_agent_loop.py`：**82 passed in 4.20s**，无跳过。`python -m examples.subagents.demo` exit 0；前台读到离线 fixture，后台成功、失败、运行中取消、启动前取消均有 1 条通知和 0 个运行任务。双 Agent/子工具目录隔离的邻接测试另得 **146 passed in 5.20s**，归 Day14 集成门禁；均不代表在线 Provider 验收。
+
+### Day 13 Git Worktree
+
+真实临时 Git 仓库先验证工作目录切换、基线持久化、忽略文件与未推送提交保护。独立审阅补充的三项 RED 为 **3 failed、28 deselected**：切换检出分支后误删原分支、ExitWorktree 对自定义基线误报新增提交、Bash OS 沙箱缺少 Git 元数据写入路径。修复后对应 **3 passed、28 deselected**；最终 `test_worktree.py test_worktree_safety.py test_tools.py test_edit_file.py test_permission_boundaries.py test_session_recovery.py test_commands.py`：**155 passed in 20.85s**。Git 操作仅发生在专用临时测试仓库；本轮 Windows 测试覆盖沙箱路径配置，未在 macOS/Linux 内核沙箱执行 Git 提交。

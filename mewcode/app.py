@@ -843,10 +843,9 @@ class MewCodeApp(App):
         self.worktree_manager = WorktreeManager(
             repo_root=work_dir,
             symlink_directories=wt_cfg.symlink_directories,
+            agent=self.agent,
         )
-        restored = self.worktree_manager.restore_session()
-        if restored:
-            self.agent.work_dir = restored.worktree_path
+        self.worktree_manager.restore_session()
 
         wt_command = create_worktree_command(self.worktree_manager)
         self.command_registry.register_sync(wt_command)
@@ -1058,7 +1057,7 @@ class MewCodeApp(App):
         self.session = session
         if self.agent:
             self.agent.session_id = session.session_id
-            self.file_history = FileHistory(self.agent.work_dir, session.session_id)
+            self.file_history = FileHistory(self.agent._session_work_dir, session.session_id)
             self.agent.file_history = self.file_history
             for tool in self.agent.registry._tools.values():
                 if hasattr(tool, "file_history"):

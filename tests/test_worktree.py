@@ -220,13 +220,27 @@ class TestIntegrationHelpers:
 # D. WorktreeManager（需要真实的 git 仓库）
 # =========================================================================
 
+@pytest.fixture(autouse=True)
+def scoped_git_trust(monkeypatch, tmp_path):
+    run = subprocess.run
+
+    def trusted_run(args, *positional, **kwargs):
+        if args and args[0] == "git":
+            cwd = Path(kwargs["cwd"]).resolve()
+            assert cwd.is_relative_to(tmp_path.resolve()), cwd
+            args = ["git", "-c", f"safe.directory={cwd.as_posix()}", *args[1:]]
+        return run(args, *positional, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", trusted_run)
+
+
 def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+    subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True, check=True)
     (path / "README.md").write_text("# Test")
-    subprocess.run(["git", "add", "."], cwd=str(path), capture_output=True)
-    subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=str(path), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True, check=True)
 
 @pytest.fixture
 def git_repo(tmp_path):

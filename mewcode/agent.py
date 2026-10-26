@@ -328,6 +328,7 @@ class Agent:
         self.registry = registry
         self.protocol = protocol
         self.work_dir = work_dir
+        self._session_work_dir = work_dir
         self.max_iterations = max_iterations
         self.permission_checker = permission_checker
         self.permission_mode: PermissionMode = (
@@ -377,13 +378,13 @@ class Agent:
     @property
     def _transcript_path(self) -> str:
         if self.session_id:
-            return str(Path(self.work_dir) / ".mewcode" / "sessions" / f"{self.session_id}.jsonl")
+            return str(Path(self._session_work_dir) / ".mewcode" / "sessions" / f"{self.session_id}.jsonl")
         return ""
 
     def start_session(self, session_id: str) -> None:
         if not _is_safe_session_id(session_id):
             raise ValueError("Invalid session ID")
-        session_dir = ensure_session_dir(self.work_dir) / session_id
+        session_dir = ensure_session_dir(self._session_work_dir) / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         self._activate_session(session_id, session_dir)
 
@@ -403,7 +404,7 @@ class Agent:
     def restore_session(self, session_id: str, messages: list[Message]) -> None:
         if not _is_safe_session_id(session_id):
             raise ValueError("Invalid session ID")
-        legacy_dir = ensure_session_dir(self.work_dir)
+        legacy_dir = ensure_session_dir(self._session_work_dir)
         scoped_dir = legacy_dir / session_id
         self._activate_session(
             session_id, scoped_dir if scoped_dir.exists() else legacy_dir
@@ -1040,11 +1041,14 @@ class Agent:
         if not path:
             return
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            file_path = Path(path)
+            if not file_path.is_absolute():
+                file_path = Path(self.work_dir) / file_path
+            with file_path.open("r", encoding="utf-8", errors="replace") as fh:
                 content = fh.read()
         except OSError:
             return
-        self.recovery_state.record_file_read(path, content)
+        self.recovery_state.record_file_read(str(file_path), content)
 
     async def _extract_memories(
         self, conversation: ConversationManager

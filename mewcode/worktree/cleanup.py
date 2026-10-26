@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from mewcode.worktree.changes import has_unpushed_commits, has_worktree_changes
 from mewcode.worktree.manager import WorktreeManager
+from mewcode.worktree.models import Worktree
 
 log = logging.getLogger(__name__)
 
@@ -72,12 +73,16 @@ async def cleanup_stale_worktrees(manager: WorktreeManager, cutoff_hours: int) -
             if flat_name in manager.active:
                 await manager._remove_worktree(flat_name, manager.active[flat_name])
             else:
-                result = manager._run_git(
-                    ["worktree", "remove", "--force", str(entry)]
+                await manager._remove_worktree(
+                    flat_name,
+                    Worktree(
+                        name=flat_name,
+                        path=str(entry),
+                        branch=f"worktree-{flat_name}",
+                        based_on="unknown",
+                        head_commit=head_sha,
+                    ),
                 )
-                if result.returncode == 0:
-                    await asyncio.sleep(0.1)
-                    manager._run_git(["branch", "-D", f"worktree-{flat_name}"])
             removed += 1
             log.info("Cleaned up stale worktree: %s", name)
         except Exception as e:

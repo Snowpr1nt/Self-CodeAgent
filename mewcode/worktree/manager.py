@@ -11,6 +11,7 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mewcode.worktree.changes import (
     CleanupResult,
@@ -19,11 +20,15 @@ from mewcode.worktree.changes import (
     has_worktree_changes,
 )
 from mewcode.worktree.models import Worktree, WorktreeSession
+from mewcode.worktree.integration import WorktreeAgentBinding
 from mewcode.worktree.session import load_worktree_session, save_worktree_session
 from mewcode.worktree.setup import perform_post_creation_setup
 from mewcode.worktree.slug import flatten_slug, validate_slug
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from mewcode.agent import Agent
 
 GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": ""}
 
@@ -38,6 +43,7 @@ class WorktreeManager:
         repo_root: str,
         symlink_directories: list[str] | None = None,
         worktree_dir: str | None = None,
+        agent: Agent | None = None,
     ) -> None:
         self.repo_root = repo_root
         self.symlink_directories = symlink_directories or []
@@ -48,6 +54,16 @@ class WorktreeManager:
         self._lock = asyncio.Lock()
         self.active: dict[str, Worktree] = {}
         self.current_session: WorktreeSession | None = None
+        self._binding: WorktreeAgentBinding | None = None
+        if agent is not None:
+            self.bind_agent(agent)
+
+    def bind_agent(self, agent: Agent) -> None:
+        if self._binding is not None and self._binding.agent is agent:
+            return
+        self._binding = WorktreeAgentBinding(agent)
+        if self.current_session is not None:
+            self._binding.switch(self.current_session.worktree_path)
 
     def _run_git(self, args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         env = {**os.environ, **GIT_ENV}
@@ -131,12 +147,15 @@ class WorktreeManager:
             head_sha = self.read_worktree_head_sha(wt_path)
             if head_sha is not None:
                 log.info("Fast recovery: reusing existing worktree at %s", wt_path)
+                # The current worktree HEAD may already include local commits.
+                # Compare against the requested base, not the recovered tip.
+                base = self._run_git(["rev-parse", "--verify", f"{base_branch}^{{commit}}"])
                 wt = Worktree(
                     name=name,
                     path=wt_path,
                     branch=branch_name,
                     based_on=base_branch,
-                    head_commit=head_sha,
+                    head_commit=base.stdout.strip() if base.returncode == 0 else "",
                 )
                 self.active[name] = wt
                 return wt
@@ -145,7 +164,7 @@ class WorktreeManager:
 
             result = self._run_git([
                 "worktree", "add",
-                "-B", branch_name, wt_path, base_branch,
+                "-b", branch_name, wt_path, base_branch,
             ])
             if result.returncode != 0:
                 raise WorktreeError(
@@ -177,8 +196,12 @@ class WorktreeManager:
         wt = self.active.get(name)
         if wt is None:
             raise WorktreeError(f"worktree not found: {name}")
+        if self.current_session is not None:
+            if self.current_session.worktree_name == name:
+                return self.current_session
+            raise WorktreeError("already in a worktree session; exit it before entering another")
 
-        original_cwd = os.getcwd()
+        original_cwd = self._binding.agent.work_dir if self._binding else os.getcwd()
         original_branch = self._get_current_branch()
         original_head = self._get_head_commit()
 
@@ -188,9 +211,12 @@ class WorktreeManager:
             worktree_name=name,
             original_branch=original_branch,
             original_head_commit=original_head,
+            worktree_base_commit=wt.head_commit,
         )
         self.current_session = session
         save_worktree_session(self._mewcode_dir, session)
+        if self._binding:
+            self._binding.switch(wt.path)
         return session
 
     # ------------------------------------------------------------------
@@ -217,28 +243,44 @@ class WorktreeManager:
                     "Set discard_changes=True to force removal."
                 )
 
-        self.current_session = None
-        save_worktree_session(self._mewcode_dir, None)
-
         if action == "remove":
-            await self._remove_worktree(name, wt)
+            try:
+                await self._remove_worktree(name, wt)
+            finally:
+                # Git can remove the directory but fail to delete a locked ref.
+                # Do not leave the agent executing in a nonexistent directory.
+                if not Path(wt.path).exists():
+                    self._leave_session(name)
+        else:
+            self._leave_session(name)
+
+    def _leave_session(self, name: str) -> None:
+        if self.current_session and self.current_session.worktree_name == name:
+            if self._binding:
+                self._binding.switch(self.current_session.original_cwd)
+            self.current_session = None
+            save_worktree_session(self._mewcode_dir, None)
 
     # ------------------------------------------------------------------
     # 删除 worktree（内部方法）
     # ------------------------------------------------------------------
 
     async def _remove_worktree(self, name: str, wt: Worktree) -> None:
+        branch = self._run_git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd=wt.path)
+        if branch.returncode != 0 or branch.stdout.strip() != wt.branch:
+            raise WorktreeError("worktree branch changed; refusing to remove its recorded branch")
         result = self._run_git(["worktree", "remove", "--force", wt.path])
         if result.returncode != 0:
-            log.warning("git worktree remove failed: %s", result.stderr.strip())
+            raise WorktreeError(f"git worktree remove failed: {result.stderr.strip()}")
+        if Path(wt.path).exists():
+            raise WorktreeError(f"git worktree remove did not remove directory: {wt.path}")
+        self.active.pop(name, None)
 
         await asyncio.sleep(0.1)
 
-        flat_slug = flatten_slug(name)
-        branch_name = f"worktree-{flat_slug}"
-        self._run_git(["branch", "-D", branch_name])
-
-        self.active.pop(name, None)
+        result = self._run_git(["branch", "-D", wt.branch])
+        if result.returncode != 0:
+            raise WorktreeError(f"git branch removal failed: {result.stderr.strip()}")
 
     # ------------------------------------------------------------------
     # 自动清理
@@ -250,7 +292,9 @@ class WorktreeManager:
         if wt is None:
             return CleanupResult(kept=False)
 
-        if has_worktree_changes(wt.path, head_commit):
+        if (
+            self.current_session and self.current_session.worktree_name == name
+        ) or has_worktree_changes(wt.path, head_commit):
             return CleanupResult(kept=True, path=wt.path, branch=wt.branch)
 
         await self._remove_worktree(name, wt)
@@ -286,10 +330,12 @@ class WorktreeManager:
             path=wt_path,
             branch=f"worktree-{flatten_slug(session.worktree_name)}",
             based_on="unknown",
-            head_commit=head_sha,
+            head_commit=session.worktree_base_commit or session.original_head_commit,
         )
         self.active[session.worktree_name] = wt
         self.current_session = session
+        if self._binding:
+            self._binding.switch(session.worktree_path)
         return session
 
     # ------------------------------------------------------------------

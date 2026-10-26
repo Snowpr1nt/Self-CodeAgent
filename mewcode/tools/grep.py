@@ -25,10 +25,13 @@ class Grep(Tool):
     params_model = Params
     category = "read"
     is_concurrency_safe = True
+    work_dir: str | None = None
 
 
     async def execute(self, params: Params) -> ToolResult:
         base = Path(params.path)
+        if self.work_dir is not None and not base.is_absolute():
+            base = Path(self.work_dir) / base
         if not base.exists():
             return ToolResult(output=f"Error: path not found: {params.path}", is_error=True)
 

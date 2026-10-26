@@ -33,15 +33,19 @@ class Changes:
 
 
 def count_worktree_changes(wt_path: str, head_commit: str) -> Changes:
-    changes = Changes()
+    # A failed query is unknown, never evidence that removal is safe.
+    changes = Changes(uncommitted=1, new_commits=1)
     try:
-        status = _run_git(["status", "--porcelain"], cwd=wt_path)
+        status = _run_git(["status", "--porcelain", "--ignored"], cwd=wt_path)
         if status.returncode == 0:
             changes.uncommitted = len(
                 [line for line in status.stdout.splitlines() if line.strip()]
             )
     except (subprocess.SubprocessError, OSError):
         changes.uncommitted = 1
+
+    if not head_commit:
+        return changes
 
     try:
         rev_list = _run_git(

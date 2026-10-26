@@ -13,6 +13,7 @@ from mewcode.tools.base import Tool, ToolResult
 from mewcode.worktree.changes import count_worktree_changes
 
 if TYPE_CHECKING:
+    from mewcode.agent import Agent
     from mewcode.worktree.manager import WorktreeManager
 
 
@@ -41,8 +42,10 @@ class ExitWorktreeTool(Tool):
     should_defer = True
 
 
-    def __init__(self, worktree_manager: WorktreeManager) -> None:
+    def __init__(self, worktree_manager: WorktreeManager, agent: Agent | None = None) -> None:
         self._manager = worktree_manager
+        if agent is not None:
+            self._manager.bind_agent(agent)
 
 
     async def execute(self, params: ExitWorktreeParams) -> ToolResult:
@@ -69,7 +72,8 @@ class ExitWorktreeTool(Tool):
 
         if action == "remove" and not discard:
             changes = count_worktree_changes(
-                session.worktree_path, session.original_head_commit
+                session.worktree_path,
+                session.worktree_base_commit or session.original_head_commit,
             )
             if changes.uncommitted > 0 or changes.new_commits > 0:
                 parts = []

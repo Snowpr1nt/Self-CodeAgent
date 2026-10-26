@@ -14,6 +14,7 @@ from mewcode.tools.base import Tool, ToolResult
 from mewcode.worktree.slug import validate_slug
 
 if TYPE_CHECKING:
+    from mewcode.agent import Agent
     from mewcode.worktree.manager import WorktreeManager
 
 
@@ -38,8 +39,10 @@ class EnterWorktreeTool(Tool):
     should_defer = True
 
 
-    def __init__(self, worktree_manager: WorktreeManager) -> None:
+    def __init__(self, worktree_manager: WorktreeManager, agent: Agent | None = None) -> None:
         self._manager = worktree_manager
+        if agent is not None:
+            self._manager.bind_agent(agent)
 
 
     async def execute(self, params: EnterWorktreeParams) -> ToolResult:
