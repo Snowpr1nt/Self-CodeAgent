@@ -24,4 +24,4 @@ Teams 演示使用两个真实 Agent 实例、共享任务与邮箱，模型响�
 
 2026-10-26 在 Windows/Python 3.12.6 上，仓库外隔离临时目录中的全量 pytest 为 **731 passed、2 skipped**。跳过项是 Windows 没有 `/etc` 候选文件的符号链接测试，以及缺少 `MEWCODE_TEST_API_KEY` 的真实 LLM 整理测试。`compileall`、CLI `--help` 与双 Agent 离线演示通过。运行方法与历史结果见[测试账本](docs/testing.md)。
 
-真实 Provider/MCP 在线 Smoke、macOS/Linux 内核沙箱、终端 pane 后端及人工交互式 TUI 验收仍需相应环境。此仓库目前没有配置 Git remote；本地提交尚未推送或合并到 `main`。
+真实 Provider/MCP 在线 Smoke、macOS/Linux 内核沙箱、终端 pane 后端及人工交互式 TUI 验收仍需相应环境。GitHub 交付分支为 `codex/day-14-teams-integration`，包含完整的 14 天开发历史。
