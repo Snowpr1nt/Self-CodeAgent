@@ -136,6 +136,8 @@ def resolve_agent_tools(
         filtered.register(tool)
     for tool in all_tools.values():
         filtered.register(tool)
+    _isolate_execution_tools(filtered)
+    _copy_registry_state(parent_registry, filtered)
     return filtered
 
 
@@ -194,6 +196,8 @@ def build_teammate_tools(
     for tool in coordination_tools:
         registry.register(tool)
 
+    _isolate_execution_tools(registry)
+    _copy_registry_state(parent_registry, registry)
     return registry
 
 
@@ -216,7 +220,41 @@ def clone_registry_for_fork(parent_registry: ToolRegistry) -> ToolRegistry:
             forked.register(clone)
         else:
             forked.register(tool)
+    _isolate_execution_tools(forked)
+    _copy_registry_state(parent_registry, forked)
     return forked
+
+
+def _isolate_execution_tools(registry: ToolRegistry) -> None:
+    """Each worker owns mutable execution paths and read-before-edit state."""
+    import copy
+    from mewcode.cache import FileCache
+    from mewcode.tools.file_state_cache import FileStateCache
+
+    state_caches: dict[int, FileStateCache] = {}
+    file_caches: dict[int, FileCache] = {}
+    for tool in registry.list_tools():
+        if tool.name not in {"ReadFile", "WriteFile", "EditFile", "Glob", "Grep", "Bash"}:
+            continue
+        clone = copy.copy(tool)
+        state = getattr(tool, "_state_cache", None)
+        if state is not None:
+            clone._state_cache = state_caches.setdefault(id(state), FileStateCache())
+        cache = getattr(tool, "_cache", None)
+        if cache is not None:
+            clone._cache = file_caches.setdefault(id(cache), FileCache())
+        registry.register(clone)
+
+
+def _copy_registry_state(parent: ToolRegistry, child: ToolRegistry) -> None:
+    """Keep execution permissions and loaded deferred schemas in a child."""
+    for tool in child.list_tools():
+        if parent.get(tool.name) is None:
+            continue
+        if not parent.is_enabled(tool.name):
+            child.disable(tool.name)
+        if parent.is_discovered(tool.name):
+            child.mark_discovered(tool.name)
 
 
 def apply_coordinator_filter(registry: ToolRegistry) -> ToolRegistry:
@@ -225,4 +263,5 @@ def apply_coordinator_filter(registry: ToolRegistry) -> ToolRegistry:
     for name, tool in all_tools.items():
         if _is_mcp_tool(name) or name in COORDINATOR_MODE_ALLOWED_TOOLS:
             filtered.register(tool)
+    _copy_registry_state(registry, filtered)
     return filtered

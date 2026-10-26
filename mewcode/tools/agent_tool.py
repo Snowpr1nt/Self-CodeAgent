@@ -4,6 +4,7 @@
 # 简历模版：jianli.xiaolinnote.com
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -238,6 +239,7 @@ class AgentTool(Tool):
             trace_id=sub_agent.trace_id,
         )
         sub_agent.agent_id = trace_node.agent_id
+        self._bind_execution_tools(sub_agent)
 
         agent_name = p.name or p.subagent_type or f"agent-{trace_node.agent_id}"
 
@@ -249,6 +251,7 @@ class AgentTool(Tool):
                 task="" if is_fork else p.prompt,
                 name=agent_name,
                 fork_conversation=conversation if is_fork else None,
+                trace_manager=self._trace_manager,
             )
             return ToolResult(
                 output=f"Sub-agent launched in background.\n"
@@ -265,6 +268,9 @@ class AgentTool(Tool):
                 result_text = await sub_agent.run_to_completion("", conversation)
             else:
                 result_text = await sub_agent.run_to_completion(p.prompt)
+        except asyncio.CancelledError:
+            self._trace_manager.complete(trace_node.agent_id, "cancelled")
+            raise
         except Exception as e:
             self._trace_manager.complete(trace_node.agent_id, "failed")
             return ToolResult(
@@ -419,6 +425,7 @@ class AgentTool(Tool):
         sub_agent.agent_id = agent_id
         sub_agent.team_name = p.team_name
         sub_agent._team_manager = self._team_manager
+        self._bind_execution_tools(sub_agent)
 
         # 7. 注册名称和成员信息
         AgentNameRegistry.instance().register(teammate_name, agent_id)
@@ -446,6 +453,7 @@ class AgentTool(Tool):
             task="" if is_fork else p.prompt,
             name=teammate_name,
             fork_conversation=conversation if is_fork else None,
+            trace_manager=self._trace_manager,
         )
 
         return ToolResult(
@@ -626,6 +634,7 @@ class AgentTool(Tool):
             trace_id=sub_agent.trace_id,
         )
         sub_agent.agent_id = trace_node.agent_id
+        self._bind_execution_tools(sub_agent)
 
         try:
             result_text = await sub_agent.run_to_completion(task)
@@ -651,6 +660,35 @@ class AgentTool(Tool):
 
         return ToolResult(output=result_text or "(sub-agent returned no output)")
 
+
+    def _bind_execution_tools(self, sub_agent: Agent) -> None:
+        from dataclasses import replace
+        from pathlib import Path
+        from mewcode.filehistory.history import FileHistory
+
+        parent_root = Path(self._parent_agent.work_dir).resolve()
+        child_root = Path(sub_agent.work_dir).resolve()
+        file_history = None
+        for tool in sub_agent.registry.list_tools():
+            if tool.name not in {"ReadFile", "WriteFile", "EditFile", "Glob", "Grep", "Bash"}:
+                continue
+            tool.work_dir = str(child_root)
+            if hasattr(tool, "file_history"):
+                if file_history is None:
+                    file_history = FileHistory(str(child_root), sub_agent.agent_id)
+                tool.file_history = file_history
+            if tool.name == "Bash" and tool.sandbox_config is not None:
+                def rebase(path: str) -> str:
+                    try:
+                        return str(child_root / Path(path).relative_to(parent_root))
+                    except ValueError:
+                        return path
+                tool.sandbox_config = replace(
+                    tool.sandbox_config,
+                    allow_write=[rebase(p) for p in tool.sandbox_config.allow_write],
+                    deny_write=[rebase(p) for p in tool.sandbox_config.deny_write],
+                )
+        sub_agent.file_history = file_history
 
     def _create_client_for_model(self, model_alias: str) -> LLMClient | None:
         if self._provider_config is None:

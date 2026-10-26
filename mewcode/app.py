@@ -1976,6 +1976,9 @@ class MewCodeApp(App):
                     if not t.done():
                         t.cancel()
 
+            if hasattr(self, "task_manager"):
+                await self.task_manager.shutdown()
+
             if self._stale_cleanup_task and not self._stale_cleanup_task.done():
                 self._stale_cleanup_task.cancel()
 

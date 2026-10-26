@@ -15,7 +15,7 @@
 | ✅ | 9 | Session 与 Memory | 重启、后台记忆、Recovery 附件、会话清理隔离；170 项门禁 |
 | ✅ | 10 | Slash Command 与 Skill | 自定义 Command/Skill 端到端示例；116 项邻接门禁 |
 | ✅ | 11 | Hook 与跨平台测试 | 三个工具入口、进程树收尾与 Windows 锁探测；157 passed、2 skipped |
-| ⬜ | 12 | SubAgent 与后台任务 | 前台/后台子 Agent、通知和取消 |
+| ✅ | 12 | SubAgent 与后台任务 | 前台/后台结果、Trace、通知、取消与回收；82 passed |
 | ⬜ | 13 | Git Worktree | 隔离开发、变更检测和安全清理 |
 | ⬜ | 14 | Agent Teams 与最终集成 | 双 Agent 演示、全量测试、项目讲解稿 |
 

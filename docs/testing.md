@@ -173,3 +173,7 @@ Day 8 新增 `tests/test_context_recovery_integration.py` 的 6 个集成场景�
 ### Day 11 Hook 与跨平台测试
 
 三条历史红线均解除，三个工具执行入口的 pre/post Hook 行为以 6 个组合场景验证；真实子进程分别覆盖 Hook/Bash 的超时和取消，以及 shell 先退出的后代进程。首次相关门禁在 `test_lock_reclaims_dead_pid` 触发 Windows `KeyboardInterrupt`，即使隔离临时目录也复现；增加进程探测 RED 测试后改用 Win32 只读存活查询。最终 `test_consolidation.py test_hooks.py test_hook_execution_paths.py test_permissions.py test_permission_boundaries.py test_agent.py test_agent_loop.py test_tools.py`：**157 passed、2 skipped in 16.42s**，没有排除用例。`pytest.mark.timeout` 的未知 marker 已移除，真实 LLM 测试改用 `asyncio.wait_for(120)`，缺少 `MEWCODE_TEST_API_KEY` 时仍跳过。测试的 `--basetemp` 均在仓库外可写目录。
+
+### Day 12 SubAgent 与后台任务
+
+先以 Event 控制的 Fake Provider 复现启动前取消、后台 Trace 未结束、禁用工具状态丢失等缺口，再集中修复。主代理最终 `test_subagent_lifecycle.py test_subagent.py test_mcp_integration.py test_agent_loop.py`：**82 passed in 4.20s**，无跳过。`python -m examples.subagents.demo` exit 0；前台读到离线 fixture，后台成功、失败、运行中取消、启动前取消均有 1 条通知和 0 个运行任务。双 Agent/子工具目录隔离的邻接测试另得 **146 passed in 5.20s**，归 Day14 集成门禁；均不代表在线 Provider 验收。
