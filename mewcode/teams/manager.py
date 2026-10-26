@@ -4,6 +4,7 @@
 # 简历模版：jianli.xiaolinnote.com
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -161,6 +162,31 @@ class TeamManager:
     def register_inprocess_handle(self, agent_id: str, handle: InProcessTeammateHandle) -> None:
         self._inprocess_handles[agent_id] = handle
 
+        def _finished(task: asyncio.Task[str]) -> None:
+            self._inprocess_handles.pop(agent_id, None)
+            team_name = self.get_team_for_teammate(agent_id)
+            team = self.get_team(team_name) if team_name else None
+            if team is not None:
+                for member in team.members:
+                    if member.agent_id == agent_id:
+                        member.is_active = False
+                team.save()
+
+        handle.task.add_done_callback(_finished)
+
+    async def shutdown(self) -> None:
+        """Stop and await all owned in-process teammates before host exit."""
+        handles = list(self._inprocess_handles.values())
+        for handle in handles:
+            handle.cancel()
+        if handles:
+            await asyncio.gather(*(handle.task for handle in handles), return_exceptions=True)
+
+    def request_shutdown(self, agent_id: str) -> None:
+        handle = self._inprocess_handles.get(agent_id)
+        if handle is not None:
+            handle.request_shutdown()
+
     def register_pane_id(self, agent_id: str, pane_id: str) -> None:
         self._pane_ids[agent_id] = pane_id
 
@@ -178,6 +204,16 @@ class TeamManager:
             names = ", ".join(m.name for m in active)
             raise TeamError(f"Cannot delete team: active members: {names}")
 
+        for member in team.members:
+            handle = self._inprocess_handles.get(member.agent_id)
+            if handle and not handle.done:
+                raise TeamError(f"Cannot delete team: stop and await teammate {member.name}")
+        # Keep team metadata and names when Git rejects removal, so the user
+        # can inspect preserved work and retry without losing ownership data.
+        for member in team.members:
+            if member.worktree_path:
+                self._cleanup_worktree(member.worktree_path)
+
         for member in list(team.members):
             AgentNameRegistry.instance().unregister(member.name)
 
@@ -188,9 +224,6 @@ class TeamManager:
             pane_id = self._pane_ids.pop(member.agent_id, None)
             if pane_id:
                 self._kill_pane(pane_id, member.backend_type)
-
-            if member.worktree_path:
-                self._cleanup_worktree(member.worktree_path)
 
             if self._trace_manager:
                 self._trace_manager.remove(member.agent_id)
@@ -270,20 +303,28 @@ class TeamManager:
             log.warning("Failed to kill pane %s: %s", pane_id, e)
 
     def _cleanup_worktree(self, worktree_path: str) -> None:
-        import subprocess
+        from mewcode.worktree.changes import has_unpushed_commits, has_worktree_changes
+
+        target = Path(worktree_path).resolve()
+        if not target.exists():
+            return
+        manager = self._worktree_manager
+        owned = next((
+            (name, wt) for name, wt in manager.active.items()
+            if Path(wt.path).resolve() == target
+        ), None) if manager is not None else None
+        if owned is None:
+            raise TeamError(f"Worktree preserved: ownership is unknown: {target}")
+        name, worktree = owned
+        if has_worktree_changes(str(target), worktree.head_commit) or has_unpushed_commits(str(target)):
+            raise TeamError(f"Worktree preserved: uncommitted or unpublished work: {target}")
         try:
-            subprocess.run(
-                ["git", "worktree", "remove", worktree_path, "--force"],
-                capture_output=True, timeout=10,
-            )
-        except Exception as e:
-            log.warning("git worktree remove failed for %s: %s", worktree_path, e)
-            import shutil
-            try:
-                if Path(worktree_path).exists():
-                    shutil.rmtree(worktree_path, ignore_errors=True)
-            except Exception:
-                pass
+            result = manager._run_git(["worktree", "remove", str(target)])
+        except Exception as error:
+            raise TeamError(f"Worktree preserved: Git removal failed: {target}: {error}") from error
+        if result.returncode != 0 or target.exists():
+            raise TeamError(f"Worktree preserved: Git removal failed: {target}: {result.stderr.strip()}")
+        manager.active.pop(name, None)
 
     def _remove_dir(self, path: Path) -> None:
         import shutil

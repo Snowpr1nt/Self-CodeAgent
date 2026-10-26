@@ -55,6 +55,6 @@ flowchart LR
 - **扩展按需加载**：MCP 和部分高级工具延迟加入 Schema，避免无关工具挤占上下文。
 - **并行任务可追踪**：SubAgent、Worktree 和 Teams 分别解决任务拆分、文件隔离与持续协作。
 
-## 5. 当前基线偏差
+## 5. 已验证的工具执行边界
 
-设计上，所有工具调用都应经过 Hook。当前主 Agent 的流式快速执行路径直接调用 `_execute_single_tool_direct()`，没有执行 `pre_tool_use` 和 `post_tool_use` Hook；Hook 逻辑只出现在非交互后台路径中。这是 Day 11 的高优先级安全修复项。
+Day 11 修复了主 Agent 快速执行路径绕过 Hook 的问题。直接、交互式、后台三个入口都在工具执行前运行 `pre_tool_use`，执行后运行 `post_tool_use`；拒绝时不执行工具。Bash 与命令 Hook 的超时和取消会回收其拥有的进程树。具体证据见 [Hook 与跨平台测试](hooks-portability.md)。

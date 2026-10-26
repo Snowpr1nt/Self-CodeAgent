@@ -7,6 +7,6 @@
 - [x] Day 11：三个工具执行入口统一遵守 pre/post Hook；解除三条红线，以跨平台 Python 子进程验证真实超时并收尾；联合 Permission/Hook/Bash/Agent 门禁。
 - [x] Day 12：agents/TaskManager/AgentTool，使用事件控制的 Fake Provider 验证前台、后台、失败、即时取消、通知去重和资源回收。
 - [x] Day 13：worktree 模块，仅在专用临时 Git 仓库验收改动、无 upstream/未推送提交保护、创建恢复与安全清理。
-- [ ] Day 14：隔离 Teams 数据的双 Agent 离线演示；全量 pytest、语法、CLI/TUI Smoke、Diff 审阅，交付讲解稿和学习总结。
+- [x] Day 14：隔离 Teams 数据的双 Agent 离线演示；全量 pytest、语法、CLI/TUI Smoke、Diff 审阅，交付讲解稿和学习总结。TUI 退出由自动化生命周期测试验证，未进行人工交互式启动。
 
 实现前写能捕获错误行为的测试并观察 RED；已有正确行为只需验收，不能为制造 RED 改坏代码。每单元先审阅实际 Diff、运行门禁再提交。测试根目录使用本轮仓库外可写 visualization 目录；真实凭据与运行配置不进入日志或 Git。未知中断不计成功，幂等命令按交接恢复约定处理。

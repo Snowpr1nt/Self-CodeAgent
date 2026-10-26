@@ -30,33 +30,38 @@ LEAD_NAME = "lead"
 
 def _is_shutdown_request(msg: MailboxMessage) -> bool:
     """判断邮箱消息是否为关闭请求。"""
-    return msg.content.strip().startswith(SHUTDOWN_PREFIX)
+    return msg.message_type == "shutdown_request" or msg.content.strip().startswith(SHUTDOWN_PREFIX)
 
 
-def _create_idle_notification(member_name: str, reason: str) -> MailboxMessage:
+def _create_idle_notification(member_name: str, reason: str, lead_id: str = LEAD_NAME) -> MailboxMessage:
     """构造 idle 通知消息，发给 lead 表明 teammate 当前轮次已完成。"""
     return create_message(
         from_agent=member_name,
-        to_agent=LEAD_NAME,
+        to_agent=lead_id,
         content=f"[idle] {member_name} (reason: {reason})",
         summary="idle",
     )
 
 
-def _inject_pending_messages(mailbox: Mailbox, member_name: str) -> str:
-    """读取 teammate 邮箱中的未读消息，拼成 system-reminder 字符串。"""
-    msgs = mailbox.consume(member_name)
+def _pending_messages(mailbox: Mailbox, recipient: str, legacy_name: str = "") -> tuple[str, bool]:
+    """Consume canonical IDs, accepting legacy name-addressed inboxes too."""
+    msgs = mailbox.consume(recipient)
+    if legacy_name and legacy_name != recipient:
+        msgs.extend(mailbox.consume(legacy_name))
+    if any(_is_shutdown_request(msg) for msg in msgs):
+        return "", True
     if not msgs:
-        return ""
+        return "", False
     parts = ["You have new messages:\n"]
     for m in msgs:
         parts.append(f"From {m.from_agent}: {m.content}\n")
-    return "\n".join(parts)
+    return "\n".join(parts), False
 
 
 async def _wait_for_next_prompt_or_shutdown(
     mailbox: Mailbox,
     member_name: str,
+    legacy_name: str = "",
 ) -> tuple[str, bool]:
     """阻塞轮询邮箱，等到有新消息后返回 (prompt, is_shutdown)。
 
@@ -66,28 +71,9 @@ async def _wait_for_next_prompt_or_shutdown(
     while True:
         await asyncio.sleep(IDLE_POLL_INTERVAL)
 
-        msgs = mailbox.consume(member_name)
-        if not msgs:
-            continue
-
-        has_shutdown = False
-        keep: list[MailboxMessage] = []
-        for m in msgs:
-            if _is_shutdown_request(m):
-                has_shutdown = True
-            else:
-                keep.append(m)
-
-        if has_shutdown:
-            return "", True
-
-        # 把剩余消息拼成下一轮的 user prompt
-        if not keep:
-            continue
-        parts = ["You have new messages from your team:\n"]
-        for m in keep:
-            parts.append(f"From {m.from_agent}: {m.content}\n")
-        return "\n".join(parts), False
+        prompt, shutdown = _pending_messages(mailbox, member_name, legacy_name)
+        if prompt or shutdown:
+            return prompt, shutdown
 
 
 class InProcessTeammateHandle:
@@ -97,11 +83,13 @@ class InProcessTeammateHandle:
         task: asyncio.Task[str],
         name: str,
         progress: TeammateProgress | None = None,
+        shutdown_requested: asyncio.Event | None = None,
     ) -> None:
         self.agent = agent
         self.task = task
         self.name = name
         self.progress = progress
+        self._shutdown_requested = shutdown_requested or asyncio.Event()
 
 
     @property
@@ -122,6 +110,10 @@ class InProcessTeammateHandle:
         if not self.task.done():
             self.task.cancel()
 
+    def request_shutdown(self) -> None:
+        """Remember a graceful stop even if the Agent consumes its message."""
+        self._shutdown_requested.set()
+
 
 def spawn_inprocess_teammate(
     agent: Agent,
@@ -141,6 +133,7 @@ def spawn_inprocess_teammate(
     )
     if member is not None:
         member.progress = progress
+    shutdown_requested = asyncio.Event()
 
     def _on_event(event: dict[str, Any]) -> None:
         """Event callback wired into agent.run_to_completion."""
@@ -176,15 +169,27 @@ def spawn_inprocess_teammate(
 
             next_prompt = prompt
             idle_reason = "available"
+            result = ""
+            recipient = agent.agent_id
+            team_manager = getattr(agent, "_team_manager", None)
+            team = team_manager.get_team(team_name) if team_manager and team_name else None
+            lead_id = team.lead_agent_id if team else LEAD_NAME
 
             while True:
+                if shutdown_requested.is_set():
+                    progress.status = "completed"
+                    return result
                 # 注入本轮开始前邮箱里堆积的消息
                 if mailbox is not None:
-                    reminder = _inject_pending_messages(mailbox, name)
+                    reminder, shutdown = _pending_messages(mailbox, recipient, name)
+                    if shutdown:
+                        progress.status = "completed"
+                        return result
                     if reminder:
                         conv.add_system_reminder(reminder)
 
                 # 执行一个完整的 agent turn
+                progress.status = "running"
                 if next_prompt:
                     result = await agent.run_to_completion(
                         next_prompt, conv, event_callback=_on_event,
@@ -194,6 +199,9 @@ def spawn_inprocess_teammate(
                         "", conv, event_callback=_on_event,
                     )
                 next_prompt = ""
+                if shutdown_requested.is_set():
+                    progress.status = "completed"
+                    return result
 
                 # 没有 mailbox 时退化为单次执行（向后兼容旧调用方式）
                 if mailbox is None:
@@ -208,14 +216,14 @@ def spawn_inprocess_teammate(
 
                 # 通知 lead 本轮已完成
                 mailbox.write(
-                    LEAD_NAME,
-                    _create_idle_notification(name, idle_reason),
+                    lead_id,
+                    _create_idle_notification(name, idle_reason, lead_id),
                 )
                 idle_reason = "available"
 
                 # 轮询等待 lead 下发新任务或 shutdown 指令
                 new_prompt, shutdown = await _wait_for_next_prompt_or_shutdown(
-                    mailbox, name,
+                    mailbox, recipient, name,
                 )
                 if shutdown:
                     progress.status = "completed"
@@ -231,5 +239,14 @@ def spawn_inprocess_teammate(
             raise
 
     task = asyncio.create_task(_run(), name=f"teammate-{name}")
+    def _finish(runner: asyncio.Task[str]) -> None:
+        if runner.cancelled():
+            progress.status = "stopped"
+        elif runner.exception() is not None:
+            progress.status = "failed"
+    task.add_done_callback(_finish)
     log.info("Spawned in-process teammate %s (verb=%s)", name, progress.spinner_verb)
-    return InProcessTeammateHandle(agent=agent, task=task, name=name, progress=progress)
+    return InProcessTeammateHandle(
+        agent=agent, task=task, name=name, progress=progress,
+        shutdown_requested=shutdown_requested,
+    )

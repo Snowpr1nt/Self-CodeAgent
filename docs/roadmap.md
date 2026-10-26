@@ -17,7 +17,7 @@
 | ✅ | 11 | Hook 与跨平台测试 | 三个工具入口、进程树收尾与 Windows 锁探测；157 passed、2 skipped |
 | ✅ | 12 | SubAgent 与后台任务 | 前台/后台结果、Trace、通知、取消与回收；82 passed |
 | ✅ | 13 | Git Worktree | 执行目录、恢复、提交保护与安全清理；155 passed |
-| ⬜ | 14 | Agent Teams 与最终集成 | 双 Agent 演示、全量测试、项目讲解稿 |
+| ✅ | 14 | Agent Teams 与最终集成 | 双 Agent 演示、731 passed、2 skipped、项目讲解稿与总结 |
 
 ## 每日执行闭环
 

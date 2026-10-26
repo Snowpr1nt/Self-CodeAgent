@@ -181,3 +181,9 @@ Day 8 新增 `tests/test_context_recovery_integration.py` 的 6 个集成场景�
 ### Day 13 Git Worktree
 
 真实临时 Git 仓库先验证工作目录切换、基线持久化、忽略文件与未推送提交保护。独立审阅补充的三项 RED 为 **3 failed、28 deselected**：切换检出分支后误删原分支、ExitWorktree 对自定义基线误报新增提交、Bash OS 沙箱缺少 Git 元数据写入路径。修复后对应 **3 passed、28 deselected**；最终 `test_worktree.py test_worktree_safety.py test_tools.py test_edit_file.py test_permission_boundaries.py test_session_recovery.py test_commands.py`：**155 passed in 20.85s**。Git 操作仅发生在专用临时测试仓库；本轮 Windows 测试覆盖沙箱路径配置，未在 macOS/Linux 内核沙箱执行 Git 提交。
+
+### Day 14 Teams 与最终回归
+
+Team 消息、持久 runner、关闭及清理以 `test_team_lifecycle.py` 和真实临时 Git 仓库验证；子工具执行目录以 `test_subagent_execution_isolation.py` 验证。新增 TUI 退出测试先得到 **1 failed**（Team runner 未等待），修复后与后台任务退出测试合并为 **2 passed**。`python -m examples.teams.demo` exit 0：Alice/Bob 完成真实共享任务，分别交付 20/22，lead 合并 42；Provider 为 Fake。
+
+第一次全量测试把隔离 USERPROFILE 放在允许的 TEMP 根目录下，导致 `test_home_ssh` 前提不成立，得到 **729 passed、1 failed、2 skipped**。把 USERPROFILE 与 TEMP 改为仓库外同级隔离目录后，最终 `python -m pytest tests -q`：**731 passed、2 skipped in 44.10s**，无失败。跳过项分别是 Windows 没有 `/etc` 候选文件的 symlink 测试，以及未提供 `MEWCODE_TEST_API_KEY` 的真实 LLM 整理测试。`compileall`、`git diff --check`、隔离目录的 `python -m mewcode --help` 均 exit 0。自动测试覆盖 TUI 退出生命周期，未进行人工交互式 UI Smoke；真实 Provider/MCP 在线 Smoke 未做。

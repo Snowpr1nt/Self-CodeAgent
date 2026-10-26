@@ -1982,6 +1982,7 @@ class MewCodeApp(App):
                 self._stale_cleanup_task.cancel()
 
             if hasattr(self, 'team_manager'):
+                await self.team_manager.shutdown()
                 for name in list(self.team_manager._teams):
                     try:
                         team = self.team_manager._teams[name]

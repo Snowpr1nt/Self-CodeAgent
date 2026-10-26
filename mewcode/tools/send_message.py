@@ -70,7 +70,6 @@ class SendMessageTool(Tool):
             )
 
         from mewcode.teams.mailbox import create_message
-        from mewcode.teams.registry import AgentNameRegistry
 
         team = self._team_manager.get_team(self._team_name)
         if team is None:
@@ -89,8 +88,6 @@ class SendMessageTool(Tool):
             metadata=p.metadata,
         )
 
-        registry = AgentNameRegistry.instance()
-
         if p.to == "*":
             member_ids = [
                 m.agent_id for m in team.members
@@ -102,14 +99,23 @@ class SendMessageTool(Tool):
             self._wake_pane_members(team, member_ids)
             return ToolResult(output=f"Message broadcast to {len(member_ids)} teammates.")
 
-        target_id = registry.resolve(p.to)
+        # Names are team-local. A global alias can point at a worker belonging
+        # to a different team, and the lead need not have a global alias.
+        member = team.get_member(p.to)
+        target_id = (
+            team.lead_agent_id if p.to in ("lead", team.lead_agent_id)
+            else member.agent_id if member is not None else None
+        )
         if target_id is None:
             return ToolResult(
                 output=f"Cannot resolve recipient '{p.to}'. Check the name or agent ID.",
                 is_error=True,
             )
 
+        msg.to_agent = target_id
         mailbox.write(target_id, msg)
+        if p.message_type == "shutdown_request":
+            self._team_manager.request_shutdown(target_id)
         self._wake_pane(target_id)
 
         return ToolResult(output=f"Message sent to '{p.to}'.")
