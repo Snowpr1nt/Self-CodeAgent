@@ -157,23 +157,13 @@ async def test_grep_reports_invalid_regex(tmp_path: Path) -> None:
     assert "invalid regex" in result.output
 
 
-class _FakeProcess:
-    def __init__(self, returncode: int, output: bytes = b"") -> None:
-        self.returncode = returncode
-        self._output = output
-
-    async def communicate(self) -> tuple[bytes, None]:
-        return self._output, None
-
-
 @pytest.mark.asyncio
 async def test_bash_marks_regular_nonzero_exit_as_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def create_process(*args: object, **kwargs: object) -> _FakeProcess:
-        return _FakeProcess(7, b"failed")
+    async def command_result(*args: object, **kwargs: object) -> tuple[bytes, int]:
+        return b"failed", 7
 
     monkeypatch.setattr(
-        "mewcode.tools.bash.asyncio.create_subprocess_shell",
-        create_process,
+        "mewcode.tools.bash.run_shell_command", command_result,
     )
 
     result = await Bash().execute(BashParams(command="custom-command"))
@@ -184,12 +174,11 @@ async def test_bash_marks_regular_nonzero_exit_as_error(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_bash_preserves_semantic_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def create_process(*args: object, **kwargs: object) -> _FakeProcess:
-        return _FakeProcess(1)
+    async def command_result(*args: object, **kwargs: object) -> tuple[bytes, int]:
+        return b"", 1
 
     monkeypatch.setattr(
-        "mewcode.tools.bash.asyncio.create_subprocess_shell",
-        create_process,
+        "mewcode.tools.bash.run_shell_command", command_result,
     )
 
     result = await Bash().execute(BashParams(command="grep needle missing.txt"))

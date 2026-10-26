@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 from mewcode.hooks.models import Action, ActionResult, HookContext
+from mewcode.process import run_shell_command
 
 log = logging.getLogger(__name__)
 
@@ -17,24 +18,15 @@ log = logging.getLogger(__name__)
 async def execute_command(action: Action, ctx: HookContext) -> ActionResult:
     command = ctx.expand(action.command)
     try:
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
         try:
-            stdout, _ = await asyncio.wait_for(
-                proc.communicate(), timeout=action.timeout
-            )
+            stdout, exit_code = await run_shell_command(command, timeout=action.timeout)
         except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
             return ActionResult(
                 output=f"Command timed out after {action.timeout}s: {command}",
                 success=False,
             )
         output = stdout.decode(errors="replace").strip() if stdout else ""
-        return ActionResult(output=output, success=proc.returncode == 0)
+        return ActionResult(output=output, success=exit_code == 0)
     except Exception as e:
         return ActionResult(output=f"Command execution error: {e}", success=False)
 

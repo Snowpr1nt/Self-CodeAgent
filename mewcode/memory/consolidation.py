@@ -219,11 +219,40 @@ def _rollback_lock(mem_dir: str, prior_mtime: int) -> None:
 
 
 def _is_process_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        # os.kill(pid, 0) is CTRL_C_EVENT on Windows and can interrupt this
+        # process group. Query the process handle without sending a signal.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        open_process.restype = wintypes.HANDLE
+        get_exit_code = kernel32.GetExitCodeProcess
+        get_exit_code.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        get_exit_code.restype = wintypes.BOOL
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+
+        handle = open_process(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # Access denied: assume alive.
+        try:
+            exit_code = wintypes.DWORD()
+            return not get_exit_code(handle, ctypes.byref(exit_code)) or exit_code.value == 259
+        finally:
+            close_handle(handle)
     try:
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True  # Do not reclaim a lock held by an inaccessible process.
     except OSError:
         return False
 

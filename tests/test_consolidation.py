@@ -91,6 +91,18 @@ def test_lock_reclaims_dead_pid():
         assert prior is not None
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows process liveness uses Win32 APIs")
+def test_lock_process_probe_does_not_send_console_control_event(monkeypatch):
+    from mewcode.memory.consolidation import _is_process_running
+
+    def unsafe_kill(*_args):
+        raise AssertionError("Windows os.kill(pid, 0) sends a console control event")
+
+    monkeypatch.setattr(os, "kill", unsafe_kill)
+    assert _is_process_running(os.getpid()) is True
+    assert _is_process_running(999999999) is False
+
+
 def test_lock_rollback_deletes_on_zero():
     from mewcode.memory.consolidation import _try_acquire_lock, _rollback_lock
 
@@ -137,7 +149,6 @@ def test_prompt_contains_all_phases():
     not os.environ.get("MEWCODE_TEST_API_KEY"),
     reason="MEWCODE_TEST_API_KEY not set"
 )
-@pytest.mark.timeout(120)
 def test_e2e_consolidation_merges_duplicates():
     api_key = os.environ["MEWCODE_TEST_API_KEY"]
     base_url = os.environ.get("MEWCODE_TEST_BASE_URL", "https://api.minimaxi.com/v1")
@@ -151,7 +162,9 @@ def test_e2e_consolidation_merges_duplicates():
         print(f"  Files: {os.listdir(mem_dir)}")
         print(f"  MEMORY.md: {Path(os.path.join(mem_dir, 'MEMORY.md')).read_text()}")
 
-        asyncio.run(_run_consolidation(work_dir, api_key, base_url, model, mem_dir))
+        asyncio.run(asyncio.wait_for(
+            _run_consolidation(work_dir, api_key, base_url, model, mem_dir), timeout=120,
+        ))
 
 
 async def _run_consolidation(work_dir, api_key, base_url, model, mem_dir):

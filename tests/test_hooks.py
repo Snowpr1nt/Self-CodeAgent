@@ -7,6 +7,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shlex
+import subprocess
+import sys
 from typing import Any, AsyncIterator
 from unittest.mock import patch
 
@@ -253,7 +257,9 @@ class TestCommandExecutor:
     async def test_timeout(self):
         from mewcode.hooks.executors import execute_command
 
-        action = Action(type="command", command="sleep 10", timeout=1)
+        args = [sys.executable, "-c", "import time; time.sleep(10)"]
+        command = subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args)
+        action = Action(type="command", command=command, timeout=1)
         ctx = HookContext()
         result = await execute_command(action, ctx)
         assert result.success is False

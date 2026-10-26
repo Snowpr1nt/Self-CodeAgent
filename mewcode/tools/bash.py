@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from mewcode.tools.base import Tool, ToolResult
+from mewcode.process import run_shell_command
 
 if TYPE_CHECKING:
     from mewcode.sandbox import Sandbox, SandboxConfig
@@ -135,16 +136,10 @@ class Bash(Tool):
             actual_command = self.sandbox.wrap(params.command, self.sandbox_config)
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                actual_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,  # 合并 stderr 到 stdout
-                cwd=self.work_dir,
+            stdout, exit_code = await run_shell_command(
+                actual_command, timeout=timeout, cwd=self.work_dir,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
             return ToolResult(output=f"Error: command timed out after {timeout}s", is_error=True)
         except Exception as e:
             return ToolResult(output=f"Error executing command: {e}", is_error=True)
@@ -153,7 +148,6 @@ class Bash(Tool):
         output = stdout.decode(errors="replace") if stdout else ""
 
         # 非零退出码时追加语义提示，并按命令约定判断是否属于错误
-        exit_code = proc.returncode or 0
         if exit_code != 0:
             hint = _exit_code_hint(params.command, exit_code)
             if output:
